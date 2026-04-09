@@ -1,13 +1,19 @@
 from pathlib import Path
 import environ
+import os 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Initialize environ
 env = environ.Env()
-environ.Env.read_env(BASE_DIR / '.env')
+# environ.Env.read_env(BASE_DIR / '.env')
+# env = environ.Env()
 
+# Only read .env file if it exists (local development)
+env_file = BASE_DIR / '.env'
+if os.path.exists(env_file):
+    environ.Env.read_env(env_file)
 # Secret key
 SECRET_KEY = env('DJANGO_SECRET_KEY')
 

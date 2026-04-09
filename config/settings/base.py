@@ -1,15 +1,9 @@
 from pathlib import Path
 import os
-import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-env = environ.Env()
-env_file = BASE_DIR / '.env'
-if os.path.exists(env_file):
-    environ.Env.read_env(env_file)
-
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or env('DJANGO_SECRET_KEY')
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',')
 
@@ -60,11 +54,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME') or env('DB_NAME'),
-        'USER': os.environ.get('DB_USER') or env('DB_USER'),
-        'PASSWORD': os.environ.get('DB_PASSWORD') or env('DB_PASSWORD'),
-        'HOST': os.environ.get('DB_HOST') or env('DB_HOST'),
-        'PORT': os.environ.get('DB_PORT') or env('DB_PORT'),
+        'NAME': os.environ.get('DB_NAME', ''),
+        'USER': os.environ.get('DB_USER', ''),
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+        'HOST': os.environ.get('DB_HOST', ''),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 

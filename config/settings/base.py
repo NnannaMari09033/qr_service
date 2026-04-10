@@ -71,6 +71,9 @@ else:
         }
     }
 
+DATABASE_URL = os.environ.get('DATABASE_URL')
+print(f"DATABASE_URL: {DATABASE_URL}")
+print(f"All env vars: {list(os.environ.keys())}")
 
 # DATABASES = {
 #     'default': {

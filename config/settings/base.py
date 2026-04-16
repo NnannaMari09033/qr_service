@@ -71,11 +71,6 @@ else:
         }
     }
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
-print(f"DATABASE_URL: {DATABASE_URL}")
-print(f"All env vars: {list(os.environ.keys())}")
-print(f"DB_HOST: {os.environ.get('DB_HOST')}")
-print(f"DB_NAME: {os.environ.get('DB_NAME')}")
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',

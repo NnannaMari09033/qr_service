@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - QR Service{% endblock %}
+
+{% block content %}
+<div class="fade-in" style="max-width: 600px; margin: 0 auto;">
+    <h1 style="font-size: 1.8rem; font-weight: 800; color: var(--text); margin-bottom: 1.5rem;">Settings</h1>
+
+    <!-- Profile -->
+    <div class="card" style="padding: 1.8rem;">
+        <div class="section-label">Profile</div>
+        <div id="profile-loading" class="text-center text-muted" style="padding: 1rem;">Loading profile...</div>
+        <form id="profile-form" class="hidden">
+            <div class="form-group">
+                <label for="profile-username">Username</label>
+                <input type="text" id="profile-username" required>
+            </div>
+            <div class="form-group">
+                <label for="profile-email">Email</label>
+                <input type="email" id="profile-email" required>
+            </div>
+            <button type="submit" class="btn btn-primary" id="save-profile-btn">Save Changes</button>
+        </form>
+    </div>
+
+    <!-- Account Overview -->
+    <div class="card" style="padding: 1.8rem;">
+        <div class="section-label">Account Overview</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div style="background: var(--primary-light);
+                        border: 1px solid #D1D2D6; border-radius: 14px; padding: 1.3rem; text-align: center;">
+                <div id="total-codes" style="font-size: 2rem; font-weight: 800; color: var(--primary);">-</div>
+                <div style="font-size: 0.78rem; color: var(--text-secondary);">Total QR Codes</div>
+            </div>
+            <div style="background: var(--accent-light);
+                        border: 1px solid #F5C6D0; border-radius: 14px; padding: 1.3rem; text-align: center;">
+                <div id="member-since" style="font-size: 1rem; font-weight: 700; color: var(--accent);">-</div>
+                <div style="font-size: 0.78rem; color: var(--text-secondary);">Member Since</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="card" style="padding: 1.8rem; border-color: #F5C6CB;">
+        <div class="section-label" style="color: var(--error);">Danger Zone</div>
+        <p class="text-sm" style="margin-bottom: 1rem; color: var(--text-secondary);">
+            Permanently delete your account and all your QR codes. This action cannot be undone.
+        </p>
+        <button onclick="deleteAccount()" class="btn btn-danger">Delete Account</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    if (!isLoggedIn()) { window.location.href = '/login/'; }
+
+    async function loadProfile() {
+        const resp = await apiCall('/auth/me/');
+        if (!resp || !resp.ok) return;
+        const user = await resp.json();
+        document.getElementById('profile-username').value = user.username;
+        document.getElementById('profile-email').value = user.email;
+        document.getElementById('profile-loading').classList.add('hidden');
+        document.getElementById('profile-form').classList.remove('hidden');
+    }
+
+    async function loadStats() {
+        const resp = await apiCall('/qr/');
+        if (resp && resp.ok) {
+            const codes = await resp.json();
+            document.getElementById('total-codes').textContent = codes.length;
+        }
+        document.getElementById('member-since').textContent = new Date().getFullYear();
+    }
+
+    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('save-profile-btn');
+        btn.textContent = 'Saving...';
+        btn.disabled = true;
+
+        const resp = await apiCall('/auth/me/', {
+            method: 'PUT',
+            body: JSON.stringify({
+                username: document.getElementById('profile-username').value,
+                email: document.getElementById('profile-email').value,
+            })
+        });
+
+        if (resp && resp.ok) {
+            showAlert('Profile updated!', 'success');
+        } else {
+            const data = resp ? await resp.json() : {};
+            const errors = Object.values(data).flat().join(', ');
+            showAlert(errors || 'Failed to update profile');
+        }
+        btn.textContent = 'Save Changes';
+        btn.disabled = false;
+    });
+
+    async function deleteAccount() {
+        const confirmed = prompt('Type "DELETE" to permanently delete your account:');
+        if (confirmed !== 'DELETE') return;
+        const resp = await apiCall('/auth/me/', { method: 'DELETE' });
+        if (resp && (resp.status === 204 || resp.ok)) {
+            clearTokens();
+            window.location.href = '/';
+        } else {
+            showAlert('Failed to delete account');
+        }
+    }
+
+    loadProfile();
+    loadStats();
+</script>
+{% endblock %}

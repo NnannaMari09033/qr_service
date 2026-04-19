@@ -1,8 +1,16 @@
 from django.db import models
+from django.contrib.auth.models import User
 import uuid
 
 class QRCode(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='qr_codes',
+        null=True,
+        blank=True
+    )
     original_url = models.URLField()
     short_code = models.CharField(max_length=20, unique=True)
     image_path = models.CharField(max_length=255)

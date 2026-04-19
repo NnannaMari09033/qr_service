@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}QR Service - Generate & Track QR Codes{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="text-center fade-in" style="padding: 5rem 0 3rem;">
+    <div style="display: inline-block; margin-bottom: 1.2rem;">
+        <span class="badge badge-teal" style="font-size: 0.85rem; padding: 0.4rem 1.1rem;">
+            Free QR Code Generator
+        </span>
+    </div>
+    <h1 style="font-size: 3.2rem; font-weight: 800; line-height: 1.12; margin-bottom: 1.2rem; color: var(--text);">
+        Generate & Track<br>Your QR Codes
+    </h1>
+    <p style="font-size: 1.15rem; color: var(--text-secondary); max-width: 520px; margin: 0 auto 2.5rem; line-height: 1.7;">
+        Create QR codes instantly for any URL. Sign up to track every scan
+        with detailed analytics and manage your codes.
+    </p>
+</div>
+
+<!-- Quick Generate -->
+<div class="card card-highlight fade-in" style="max-width: 650px; margin: 0 auto 3.5rem; padding: 2rem;">
+    <h2 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--text);">
+        Try it now — no account needed
+    </h2>
+    <form id="quick-generate" style="display: flex; gap: 0.7rem; flex-wrap: wrap;">
+        <input type="url" id="quick-url" placeholder="https://example.com" required
+               style="flex: 1; min-width: 240px; padding: 0.8rem 1rem;
+               background: var(--bg-surface); border: 1.5px solid var(--border);
+               border-radius: 12px; font-size: 0.95rem; color: var(--text); font-family: inherit;">
+        <button type="submit" class="btn btn-primary btn-lg">Generate</button>
+    </form>
+    <div id="quick-result" class="hidden" style="margin-top: 1.5rem;"></div>
+</div>
+
+<!-- Features -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 4rem;">
+    <div class="card" style="padding: 2rem;">
+        <div style="width: 48px; height: 48px; background: var(--primary);
+                    border-radius: 14px; display: flex; align-items: center; justify-content: center;
+                    margin-bottom: 1.2rem;">
+            <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+                <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/>
+                <rect x="18" y="14" width="3" height="3"/><rect x="14" y="18" width="3" height="3"/>
+                <rect x="18" y="18" width="3" height="3"/>
+            </svg>
+        </div>
+        <h3 style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text);">Instant QR Codes</h3>
+        <p style="color: var(--text-secondary); line-height: 1.65; font-size: 0.92rem;">
+            Paste any URL and get a scannable QR code in seconds. Download the image and use it anywhere.
+        </p>
+    </div>
+    <div class="card" style="padding: 2rem;">
+        <div style="width: 48px; height: 48px; background: var(--accent);
+                    border-radius: 14px; display: flex; align-items: center; justify-content: center;
+                    margin-bottom: 1.2rem;">
+            <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M3 3v18h18"/><path d="M7 16l4-6 4 4 5-8"/>
+            </svg>
+        </div>
+        <h3 style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text);">Scan Analytics</h3>
+        <p style="color: var(--text-secondary); line-height: 1.65; font-size: 0.92rem;">
+            Track every scan with timestamps, geographic data, and daily trends. Know exactly how your codes perform.
+        </p>
+    </div>
+    <div class="card" style="padding: 2rem;">
+        <div style="width: 48px; height: 48px; background: var(--success-light);
+                    border-radius: 14px; display: flex; align-items: center; justify-content: center;
+                    margin-bottom: 1.2rem;">
+            <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+            </svg>
+        </div>
+        <h3 style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text);">REST API</h3>
+        <p style="color: var(--text-secondary); line-height: 1.65; font-size: 0.92rem;">
+            Full REST API with JWT authentication and Swagger documentation. Build QR features into your own apps.
+        </p>
+    </div>
+</div>
+
+<!-- CTA -->
+<div class="text-center" style="padding: 2rem 0 4rem;">
+    <div style="background: var(--accent-light); border: 1px solid #F5C6D0;
+                border-radius: 20px; padding: 3rem 2rem; max-width: 550px; margin: 0 auto;">
+        <h2 style="font-size: 1.6rem; font-weight: 800; margin-bottom: 0.7rem; color: var(--text);">
+            Ready to track your QR codes?
+        </h2>
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+            Create a free account to unlock analytics and management.
+        </p>
+        <a href="/register/" class="btn btn-accent btn-lg">Create Free Account</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    if (isLoggedIn()) {
+        window.location.href = '/dashboard/';
+    }
+
+    document.getElementById('quick-generate').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const url = document.getElementById('quick-url').value;
+        const btn = e.target.querySelector('button');
+        btn.textContent = 'Generating...';
+        btn.disabled = true;
+
+        try {
+            const resp = await fetch('/qr/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ original_url: url })
+            });
+
+            if (resp.ok) {
+                const qr = await resp.json();
+                const imgUrl = '/qr/image/' + qr.short_code + '.png';
+                const redirectUrl = window.location.origin + '/qr/redirect/' + qr.short_code + '/';
+
+                document.getElementById('quick-result').innerHTML = `
+                    <div style="display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap;
+                                padding: 1.2rem; background: var(--success-light); border: 1px solid #3D4155;
+                                border-radius: 14px;">
+                        <img src="${imgUrl}" alt="QR Code"
+                             style="width: 150px; height: 150px; border-radius: 14px;
+                                    background: #fff; padding: 8px; border: 1px solid var(--border);">
+                        <div style="flex: 1; min-width: 200px;">
+                            <span class="badge badge-emerald mb-2">QR Code Generated!</span>
+                            <p style="font-size: 0.88rem; color: #B0B3BF; margin-top: 0.6rem; word-break: break-all;">
+                                ${escapeHtml(qr.original_url)}
+                            </p>
+                            <p style="font-size: 0.82rem; color: #8A8D9A; margin-top: 0.3rem;">
+                                Redirect: <a href="${redirectUrl}" target="_blank" style="color: #7DD3C0;">${redirectUrl}</a>
+                            </p>
+                            <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                <a href="${imgUrl}" download="${qr.short_code}.png" class="btn btn-secondary btn-sm">
+                                    Download Image
+                                </a>
+                                <a href="/register/" class="btn btn-outline btn-sm">
+                                    Sign up to track scans
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('quick-result').classList.remove('hidden');
+            } else {
+                const data = await resp.json();
+                showAlert(data.error || 'Failed to generate QR code');
+            }
+        } catch (err) {
+            showAlert('Something went wrong. Please try again.');
+        }
+
+        btn.textContent = 'Generate';
+        btn.disabled = false;
+    });
+</script>
+{% endblock %}

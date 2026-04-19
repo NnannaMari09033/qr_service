@@ -3,14 +3,19 @@ from django.db.models.functions import TruncDate
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from drf_spectacular.utils import extend_schema
 from qr.models import QRCode
 from .models import Scan
 
 
 class QRCodeStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(summary="Get scan analytics for a QR code")
     def get(self, request, short_code):
         try:
-            qr_code = QRCode.objects.get(short_code=short_code)
+            qr_code = QRCode.objects.get(short_code=short_code, owner=request.user)
         except QRCode.DoesNotExist:
             return Response(
                 {'error': 'QR code not found'},

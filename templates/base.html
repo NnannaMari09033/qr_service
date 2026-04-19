@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}QR Service{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-body: #F9F7F4;
+            --bg-surface: #FFFFFF;
+            --bg-surface-alt: #F0EDEA;
+            --primary: #1A1D2E;
+            --primary-hover: #12141F;
+            --primary-light: #EAEBEE;
+            --accent: #E8536C;
+            --accent-light: #FDE8EC;
+            --text: #1A1D2E;
+            --text-secondary: #5F6477;
+            --text-muted: #9CA0AE;
+            --border: #E5E2DE;
+            --border-hover: #D1CEC9;
+            --success: #1A1D2E;
+            --success-light: #2D3142;
+            --error: #D94452;
+            --error-light: #FDE8EA;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-body);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        a { color: var(--accent); text-decoration: none; transition: color 0.2s; }
+        a:hover { color: #D4445C; }
+
+        /* ── Navbar ── */
+        .navbar {
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0.9rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+        .navbar-brand {
+            color: var(--text);
+            font-size: 1.3rem;
+            font-weight: 800;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .navbar-brand .logo-icon {
+            width: 32px; height: 32px;
+            background: var(--primary);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.85rem; font-weight: 800; color: #fff;
+        }
+        .navbar-links { display: flex; gap: 0.4rem; align-items: center; }
+        .navbar-links a {
+            color: var(--text-secondary);
+            padding: 0.45rem 0.9rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .navbar-links a:hover {
+            background: var(--bg-surface-alt);
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+            padding: 0.7rem 1.4rem;
+            border: none; border-radius: 12px; cursor: pointer;
+            font-size: 0.9rem; font-weight: 600; font-family: inherit;
+            transition: all 0.2s; text-decoration: none;
+        }
+        .btn:hover { transform: translateY(-1px); text-decoration: none; }
+        .btn:active { transform: translateY(0); }
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(13,139,139,0.2);
+        }
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            box-shadow: 0 4px 12px rgba(13,139,139,0.25);
+            color: #fff;
+        }
+        .btn-accent {
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(232,83,108,0.2);
+        }
+        .btn-accent:hover {
+            background: #D4445C;
+            box-shadow: 0 4px 12px rgba(232,83,108,0.25);
+            color: #fff;
+        }
+        .btn-secondary {
+            background: var(--bg-surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover {
+            background: var(--bg-surface-alt);
+            border-color: var(--border-hover);
+            color: var(--text);
+        }
+        .btn-danger {
+            background: var(--error-light);
+            color: var(--error);
+            border: 1px solid #F5C6CB;
+        }
+        .btn-danger:hover { background: #FBD5D9; color: #C03040; }
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+        .btn-outline:hover {
+            background: var(--primary-light);
+            color: var(--primary-hover);
+        }
+        .btn-sm { padding: 0.4rem 0.9rem; font-size: 0.82rem; border-radius: 10px; }
+        .btn-lg { padding: 0.85rem 2rem; font-size: 1.05rem; border-radius: 14px; }
+
+        /* ── Container ── */
+        .container { max-width: 1080px; margin: 0 auto; padding: 2rem; }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .card:hover {
+            border-color: var(--border-hover);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+        }
+        .card-highlight {
+            background: var(--primary-light);
+            border-color: #D1D2D6;
+        }
+
+        /* ── Forms ── */
+        .form-group { margin-bottom: 1.2rem; }
+        .form-group label {
+            display: block; margin-bottom: 0.45rem;
+            font-weight: 600; color: var(--text); font-size: 0.88rem;
+        }
+        .form-group input {
+            width: 100%; padding: 0.8rem 1rem;
+            background: var(--bg-surface);
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            font-size: 0.95rem; color: var(--text); font-family: inherit;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(13,139,139,0.1);
+        }
+        .form-group input::placeholder { color: var(--text-muted); }
+
+        /* ── Alerts ── */
+        .alert {
+            padding: 0.85rem 1.2rem; border-radius: 12px;
+            margin-bottom: 1rem; font-size: 0.9rem; font-weight: 500;
+            animation: slideDown 0.3s ease;
+        }
+        .alert-error {
+            background: var(--error-light);
+            color: var(--error);
+            border: 1px solid #F5C6CB;
+        }
+        .alert-success {
+            background: var(--success-light);
+            color: #fff;
+            border: 1px solid #3D4155;
+        }
+
+        /* ── Badges ── */
+        .badge {
+            display: inline-block; padding: 0.25rem 0.7rem;
+            border-radius: 8px; font-size: 0.75rem; font-weight: 600;
+        }
+        .badge-teal { background: var(--primary-light); color: var(--primary); }
+        .badge-amber { background: var(--accent-light); color: var(--accent); }
+        .badge-emerald { background: var(--success-light); color: #fff; }
+
+        /* ── Section Headers ── */
+        .section-label {
+            font-size: 0.78rem; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.06em;
+            margin-bottom: 1rem;
+        }
+
+        /* ── Utility ── */
+        .text-center { text-align: center; }
+        .text-muted { color: var(--text-muted); }
+        .text-secondary { color: var(--text-secondary); }
+        .text-sm { font-size: 0.85rem; }
+        .mt-1 { margin-top: 0.5rem; }
+        .mt-2 { margin-top: 1rem; }
+        .mt-3 { margin-top: 1.5rem; }
+        .mb-2 { margin-bottom: 1rem; }
+        .hidden { display: none; }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeIn 0.5s ease; }
+
+        @media (max-width: 640px) {
+            .navbar { padding: 0.8rem 1rem; }
+            .container { padding: 1rem; }
+            .navbar-links a { padding: 0.4rem 0.5rem; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">
+            <span class="logo-icon">Q</span>
+            QR Service
+        </a>
+        <div class="navbar-links" id="nav-links"></div>
+    </nav>
+
+    <div class="container">
+        <div id="alert-container"></div>
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function getAccessToken() { return localStorage.getItem('access_token'); }
+        function getRefreshToken() { return localStorage.getItem('refresh_token'); }
+        function saveTokens(access, refresh) {
+            localStorage.setItem('access_token', access);
+            localStorage.setItem('refresh_token', refresh);
+        }
+        function clearTokens() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+        }
+        function isLoggedIn() { return !!getAccessToken(); }
+
+        async function apiCall(url, options = {}) {
+            const headers = options.headers || {};
+            headers['Content-Type'] = 'application/json';
+            if (isLoggedIn()) {
+                headers['Authorization'] = 'Bearer ' + getAccessToken();
+            }
+            let response = await fetch(url, { ...options, headers });
+            if (response.status === 401 && getRefreshToken()) {
+                const refreshResp = await fetch('/auth/refresh/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh: getRefreshToken() })
+                });
+                if (refreshResp.ok) {
+                    const data = await refreshResp.json();
+                    saveTokens(data.access, data.refresh || getRefreshToken());
+                    headers['Authorization'] = 'Bearer ' + data.access;
+                    response = await fetch(url, { ...options, headers });
+                } else {
+                    clearTokens();
+                    window.location.href = '/login/';
+                    return;
+                }
+            }
+            return response;
+        }
+
+        function showAlert(message, type = 'error') {
+            const container = document.getElementById('alert-container');
+            const div = document.createElement('div');
+            div.className = 'alert alert-' + (type === 'success' ? 'success' : 'error');
+            div.textContent = message;
+            container.innerHTML = '';
+            container.appendChild(div);
+            setTimeout(() => { container.innerHTML = ''; }, 5000);
+        }
+
+        function updateNav() {
+            const nav = document.getElementById('nav-links');
+            if (isLoggedIn()) {
+                nav.innerHTML = `
+                    <a href="/dashboard/">Dashboard</a>
+                    <a href="/settings/">Settings</a>
+                    <a href="#" onclick="logout(); return false;">Logout</a>
+                `;
+            } else {
+                nav.innerHTML = `
+                    <a href="/login/">Login</a>
+                    <a href="/register/" class="btn btn-primary btn-sm">Get Started</a>
+                `;
+            }
+        }
+
+        function logout() {
+            clearTokens();
+            window.location.href = '/';
+        }
+
+        updateNav();
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

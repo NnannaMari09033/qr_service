@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - QR Service{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <!-- Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h1 style="font-size: 1.8rem; font-weight: 800; color: var(--text);">Dashboard</h1>
+            <p class="text-muted text-sm" style="margin-top: 0.2rem;">Manage your QR codes</p>
+        </div>
+        <div id="stats-summary" style="display: flex; gap: 0.8rem;"></div>
+    </div>
+
+    <!-- Create -->
+    <div class="card card-highlight" style="padding: 1.5rem;">
+        <div class="section-label">Create New QR Code</div>
+        <form id="create-form" style="display: flex; gap: 0.7rem; flex-wrap: wrap;">
+            <input type="url" id="url-input" placeholder="https://example.com" required
+                   style="flex: 1; min-width: 250px; padding: 0.8rem 1rem;
+                   background: var(--bg-surface); border: 1.5px solid var(--border);
+                   border-radius: 12px; font-size: 0.95rem; color: var(--text); font-family: inherit;">
+            <button type="submit" class="btn btn-primary" id="create-btn">Generate QR Code</button>
+        </form>
+    </div>
+
+    <!-- QR List -->
+    <div style="margin-top: 1.5rem;">
+        <div class="section-label">Your QR Codes</div>
+        <div id="qr-list">
+            <div class="card text-center" style="padding: 3rem;">
+                <div class="text-muted">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Modal -->
+<div id="stats-modal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+     background: rgba(0,0,0,0.4);
+     display: flex; align-items: center; justify-content: center; z-index: 100;">
+    <div class="card" style="max-width: 550px; width: 90%; max-height: 80vh; overflow-y: auto;
+                             background: var(--bg-surface); border-color: var(--border);
+                             box-shadow: 0 8px 32px rgba(0,0,0,0.12);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem;">
+            <h2 style="font-size: 1.2rem; font-weight: 700; color: var(--text);">Scan Analytics</h2>
+            <button onclick="closeStats()" class="btn btn-secondary btn-sm"
+                    style="padding: 0.3rem 0.7rem; font-size: 1.1rem; line-height: 1;">&times;</button>
+        </div>
+        <div id="stats-content"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    if (!isLoggedIn()) { window.location.href = '/login/'; }
+
+    async function loadQRCodes() {
+        const resp = await apiCall('/qr/');
+        if (!resp || !resp.ok) {
+            document.getElementById('qr-list').innerHTML =
+                '<div class="card text-center" style="padding: 2rem;"><p class="text-muted">Failed to load QR codes.</p></div>';
+            return;
+        }
+
+        const codes = await resp.json();
+
+        document.getElementById('stats-summary').innerHTML = `
+            <div style="background: var(--primary-light);
+                        border: 1px solid #D1D2D6;
+                        border-radius: 14px; padding: 0.6rem 1.4rem; text-align: center;">
+                <div style="font-size: 1.4rem; font-weight: 800; color: var(--primary);">${codes.length}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">QR Codes</div>
+            </div>
+        `;
+
+        if (codes.length === 0) {
+            document.getElementById('qr-list').innerHTML = `
+                <div class="card text-center" style="padding: 4rem 2rem;">
+                    <svg width="48" height="48" fill="none" stroke="var(--text-muted)" stroke-width="1.5" viewBox="0 0 24 24" style="margin: 0 auto 1rem;">
+                        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/>
+                    </svg>
+                    <p style="color: var(--text-secondary); font-size: 1rem;">No QR codes yet</p>
+                    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.3rem;">
+                        Enter a URL above to create your first one
+                    </p>
+                </div>`;
+            return;
+        }
+
+        let html = '';
+        for (const qr of codes) {
+            const redirectUrl = window.location.origin + '/qr/redirect/' + qr.short_code + '/';
+            const createdDate = new Date(qr.created_at).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric'
+            });
+
+            html += `
+            <div class="card" style="display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; padding: 1.3rem;">
+                <a href="/qr/image/${qr.short_code}.png" download="${qr.short_code}.png" style="display: block; flex-shrink: 0;">
+                    <img src="/qr/image/${qr.short_code}.png" alt="QR Code"
+                         style="width: 96px; height: 96px; border-radius: 12px; background: #fff; padding: 6px; cursor: pointer;
+                                border: 1px solid var(--border);"
+                         title="Click to download">
+                </a>
+                <div style="flex: 1; min-width: 180px;">
+                    <p style="font-weight: 600; color: var(--text); word-break: break-all; font-size: 0.95rem;">
+                        ${escapeHtml(qr.original_url)}
+                    </p>
+                    <div style="display: flex; gap: 0.6rem; align-items: center; margin-top: 0.4rem; flex-wrap: wrap;">
+                        <span class="badge badge-teal">${escapeHtml(qr.short_code)}</span>
+                        <span class="text-muted text-sm">${createdDate}</span>
+                    </div>
+                    <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.4rem; word-break: break-all;">${redirectUrl}</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+                    <button onclick="viewStats('${qr.short_code}')" class="btn btn-secondary btn-sm">Stats</button>
+                    <button onclick="deleteQR('${qr.short_code}')" class="btn btn-danger btn-sm">Delete</button>
+                </div>
+            </div>`;
+        }
+        document.getElementById('qr-list').innerHTML = html;
+    }
+
+    document.getElementById('create-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('create-btn');
+        btn.textContent = 'Generating...';
+        btn.disabled = true;
+
+        const url = document.getElementById('url-input').value;
+        const resp = await apiCall('/qr/', {
+            method: 'POST',
+            body: JSON.stringify({ original_url: url })
+        });
+
+        if (resp && resp.ok) {
+            document.getElementById('url-input').value = '';
+            showAlert('QR code created!', 'success');
+            loadQRCodes();
+        } else if (resp) {
+            const data = await resp.json();
+            showAlert(data.error || 'Failed to create QR code');
+        }
+        btn.textContent = 'Generate QR Code';
+        btn.disabled = false;
+    });
+
+    async function deleteQR(shortCode) {
+        if (!confirm('Delete this QR code? This cannot be undone.')) return;
+        const resp = await apiCall('/qr/' + shortCode + '/', { method: 'DELETE' });
+        if (resp && (resp.status === 204 || resp.ok)) {
+            showAlert('QR code deleted', 'success');
+            loadQRCodes();
+        } else {
+            showAlert('Failed to delete QR code');
+        }
+    }
+
+    async function viewStats(shortCode) {
+        const resp = await apiCall('/analytics/' + shortCode + '/stats/');
+        if (!resp || !resp.ok) { showAlert('Failed to load stats'); return; }
+
+        const stats = await resp.json();
+
+        let html = `
+            <div style="text-align: center; padding: 1.5rem; margin-bottom: 1rem;
+                        background: var(--primary-light); border-radius: 14px;">
+                <div style="font-size: 3rem; font-weight: 800; color: var(--primary);">${stats.total_scans}</div>
+                <div style="color: var(--text-secondary); font-size: 0.9rem;">Total Scans</div>
+                <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.5rem; word-break: break-all;">${escapeHtml(stats.original_url)}</p>
+            </div>
+        `;
+
+        const dates = Object.entries(stats.scans_by_date || {});
+        if (dates.length > 0) {
+            html += '<div class="section-label" style="margin-top: 1rem;">Scans by Date</div>';
+            html += '<div style="margin-bottom: 1.2rem;">';
+            const maxCount = Math.max(...dates.map(d => d[1]));
+            for (const [date, count] of dates.sort().reverse()) {
+                const pct = (count / maxCount) * 100;
+                html += `
+                <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.5rem;">
+                    <span style="color: var(--text-secondary); font-size: 0.82rem; min-width: 85px;">${date}</span>
+                    <div style="flex: 1; background: var(--bg-surface-alt); border-radius: 6px; height: 24px; overflow: hidden;">
+                        <div style="width: ${pct}%; height: 100%;
+                                    background: var(--primary);
+                                    border-radius: 6px; min-width: 28px;
+                                    display: flex; align-items: center; justify-content: flex-end; padding-right: 7px;">
+                            <span style="font-size: 0.72rem; font-weight: 700; color: #fff;">${count}</span>
+                        </div>
+                    </div>
+                </div>`;
+            }
+            html += '</div>';
+        }
+
+        const countries = Object.entries(stats.scans_by_country || {});
+        if (countries.length > 0) {
+            html += '<div class="section-label">Scans by Country</div>';
+            for (const [country, count] of countries.sort((a, b) => b[1] - a[1])) {
+                html += `
+                <div style="display: flex; justify-content: space-between; padding: 0.55rem 0;
+                            border-bottom: 1px solid var(--border);">
+                    <span style="color: var(--text); font-size: 0.9rem;">${escapeHtml(country || 'Unknown')}</span>
+                    <span style="color: var(--accent); font-weight: 700; font-size: 0.9rem;">${count}</span>
+                </div>`;
+            }
+        }
+
+        if (dates.length === 0 && countries.length === 0) {
+            html += '<p class="text-center text-muted" style="padding: 1.5rem 0;">No scans yet. Share your QR code to start tracking!</p>';
+        }
+
+        document.getElementById('stats-content').innerHTML = html;
+        document.getElementById('stats-modal').classList.remove('hidden');
+        document.getElementById('stats-modal').style.display = 'flex';
+    }
+
+    function closeStats() {
+        document.getElementById('stats-modal').classList.add('hidden');
+        document.getElementById('stats-modal').style.display = 'none';
+    }
+
+    document.getElementById('stats-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeStats();
+    });
+
+    loadQRCodes();
+</script>
+{% endblock %}

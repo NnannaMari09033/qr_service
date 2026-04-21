@@ -23,6 +23,9 @@ urlpatterns = [
     path('qr/', include('qr.urls')),
     path('analytics/', include('analytics.urls')),
     path('auth/', include('users.urls')),
+
+    # Allauth (Google OAuth + email verification)
+    path('accounts/', include('allauth.urls')),
 ]
 
 # Serve media files (QR code images) in development

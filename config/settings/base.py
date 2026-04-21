@@ -15,10 +15,17 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
     # Third party
     'rest_framework',
     'rest_framework_simplejwt',
     'drf_spectacular',
+    # Allauth (email verification)
+    'allauth',
+    'allauth.account',
+    # 2FA
+    'django_otp',
+    'django_otp.plugins.otp_totp',
     # Local
     'qr',
     'analytics',
@@ -27,14 +34,23 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
 ]
 
+SITE_ID = 1
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django_otp.middleware.OTPMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -137,3 +153,18 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
 }
+
+# ── Allauth ──
+ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
+ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
+ACCOUNT_SIGNUP_REDIRECT_URL = '/dashboard/'
+ACCOUNT_LOGIN_REDIRECT_URL = '/dashboard/'
+ACCOUNT_LOGOUT_REDIRECT_URL = '/'
+ACCOUNT_RATE_LIMITS = {
+    'login': '5/m/ip',
+    'signup': '5/m/ip',
+}
+
+# Email backend (console for dev, override in production with SMTP)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

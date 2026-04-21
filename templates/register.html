@@ -9,6 +9,7 @@
         <p style="color: var(--text-secondary); margin-top: 0.4rem;">Start generating and tracking QR codes</p>
     </div>
     <div class="card" style="padding: 2rem;">
+        <!-- Email/Password Signup -->
         <form id="register-form">
             <div class="form-group">
                 <label for="username">Username</label>
@@ -29,6 +30,23 @@
             <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">Create Account</button>
         </form>
     </div>
+
+    <!-- Email Verification Notice (hidden by default) -->
+    <div id="verify-notice" class="card hidden" style="padding: 2rem; text-align: center;">
+        <div style="width: 56px; height: 56px; background: var(--primary-light); border-radius: 50%;
+                    display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem;">
+            <svg width="28" height="28" fill="none" stroke="var(--primary)" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+            </svg>
+        </div>
+        <h2 style="font-size: 1.2rem; font-weight: 700; color: var(--text);">Check your email</h2>
+        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.5rem;" id="verify-email-text">
+            We sent a verification link to your email. Click it to activate your account.
+        </p>
+        <a href="/login/" class="btn btn-primary" style="margin-top: 1.2rem;">Go to Login</a>
+    </div>
+
     <p class="text-center mt-2" style="font-size: 0.9rem; color: var(--text-secondary);">
         Already have an account? <a href="/login/">Log in</a>
     </p>
@@ -70,20 +88,11 @@
             return;
         }
 
-        const loginResp = await fetch('/auth/login/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-
-        if (loginResp.ok) {
-            const tokens = await loginResp.json();
-            saveTokens(tokens.access, tokens.refresh);
-            window.location.href = '/dashboard/';
-        } else {
-            showAlert('Account created! Please log in.', 'success');
-            setTimeout(() => { window.location.href = '/login/'; }, 1500);
-        }
+        // Show verification notice
+        document.querySelector('.card').style.display = 'none';
+        document.getElementById('verify-notice').classList.remove('hidden');
+        document.getElementById('verify-email-text').textContent =
+            `We sent a verification link to ${email}. Click it to activate your account.`;
     });
 </script>
 {% endblock %}

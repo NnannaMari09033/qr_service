@@ -125,9 +125,6 @@ class QRCodeDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        if qr_code.image_path and os.path.exists(qr_code.image_path):
-            os.remove(qr_code.image_path)
-
         qr_code.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

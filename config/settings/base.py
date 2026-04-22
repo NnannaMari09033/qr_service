@@ -30,7 +30,7 @@ INSTALLED_APPS = [
     'qr',
     'analytics',
     'users',
-    # Token blacklist (for refresh token rotation)
+    # Token blacklist (for 
     'rest_framework_simplejwt.token_blacklist',
 ]
 

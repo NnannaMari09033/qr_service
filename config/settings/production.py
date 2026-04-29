@@ -6,13 +6,19 @@ if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY environment variable is required")
 
 DEBUG = False
-_raw_allowed_hosts = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
-ALLOWED_HOSTS = [h.strip() for h in _raw_allowed_hosts.split(',') if h.strip()]
 
-import sys
-print(f"[settings] DJANGO_SETTINGS_MODULE = {os.environ.get('DJANGO_SETTINGS_MODULE', '<not set>')}", file=sys.stderr, flush=True)
-print(f"[settings] DJANGO_ALLOWED_HOSTS raw env = {_raw_allowed_hosts!r}", file=sys.stderr, flush=True)
-print(f"[settings] ALLOWED_HOSTS parsed = {ALLOWED_HOSTS!r}", file=sys.stderr, flush=True)
+_DEFAULT_HOSTS = [
+    'qrservice-production-5d69.up.railway.app',
+    '.up.railway.app',
+    'localhost',
+    '127.0.0.1',
+]
+_env_hosts = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
+ALLOWED_HOSTS = list({*_DEFAULT_HOSTS, *_env_hosts})
+
+CSRF_TRUSTED_ORIGINS = [
+    f'https://{h.lstrip(".")}' for h in ALLOWED_HOSTS if h not in ('localhost', '127.0.0.1')
+]
 
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 

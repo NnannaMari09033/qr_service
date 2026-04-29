@@ -6,8 +6,13 @@ if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY environment variable is required")
 
 DEBUG = False
-ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
-ALLOWED_HOSTS = [h.strip() for h in ALLOWED_HOSTS if h.strip()]
+_raw_allowed_hosts = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
+ALLOWED_HOSTS = [h.strip() for h in _raw_allowed_hosts.split(',') if h.strip()]
+
+import sys
+print(f"[settings] DJANGO_SETTINGS_MODULE = {os.environ.get('DJANGO_SETTINGS_MODULE', '<not set>')}", file=sys.stderr, flush=True)
+print(f"[settings] DJANGO_ALLOWED_HOSTS raw env = {_raw_allowed_hosts!r}", file=sys.stderr, flush=True)
+print(f"[settings] ALLOWED_HOSTS parsed = {ALLOWED_HOSTS!r}", file=sys.stderr, flush=True)
 
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 

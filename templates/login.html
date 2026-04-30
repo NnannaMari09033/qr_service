@@ -47,7 +47,9 @@
 
 {% block scripts %}
 <script>
-    let pendingTokens = null;
+    // Held in memory only — never persisted. Becomes useless after 5 minutes
+    // or after a successful 2FA verification.
+    let pendingPreAuthToken = null;
 
     document.getElementById('login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -60,39 +62,28 @@
 
         const resp = await fetch('/auth/login/', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
         });
 
-        if (resp.ok) {
-            const tokens = await resp.json();
-            pendingTokens = tokens;
-
-            // Check if user has 2FA enabled
-            const profileResp = await fetch('/auth/me/', {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + tokens.access
-                }
-            });
-
-            if (profileResp.ok) {
-                const profile = await profileResp.json();
-                if (profile.has_2fa) {
-                    // Show 2FA form
-                    document.querySelector('.card').style.display = 'none';
-                    document.getElementById('twofa-section').classList.remove('hidden');
-                    document.getElementById('twofa-code').focus();
-                } else {
-                    // No 2FA, go straight to dashboard
-                    saveTokens(tokens.access, tokens.refresh);
-                    window.location.href = '/dashboard/';
-                }
-            }
-        } else {
+        if (!resp.ok) {
             showAlert('Invalid username or password');
             btn.textContent = 'Log In';
             btn.disabled = false;
+            return;
+        }
+
+        const data = await resp.json();
+
+        if (data.requires_2fa) {
+            pendingPreAuthToken = data.pre_auth_token;
+            document.querySelector('.card').style.display = 'none';
+            document.getElementById('twofa-section').classList.remove('hidden');
+            document.getElementById('twofa-code').focus();
+        } else {
+            // Cookies already set by the server — go to dashboard.
+            window.location.href = '/dashboard/';
         }
     });
 
@@ -105,15 +96,13 @@
 
         const resp = await fetch('/auth/2fa/verify/', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + pendingTokens.access
-            },
-            body: JSON.stringify({ code })
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pre_auth_token: pendingPreAuthToken, code })
         });
 
         if (resp.ok) {
-            saveTokens(pendingTokens.access, pendingTokens.refresh);
+            pendingPreAuthToken = null;
             window.location.href = '/dashboard/';
         } else {
             showAlert('Invalid 2FA code. Please try again.');

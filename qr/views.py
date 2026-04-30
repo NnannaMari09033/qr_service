@@ -58,7 +58,7 @@ class QRCodeListView(APIView):
             )
 
         owner = request.user if request.user.is_authenticated else None
-        qr_code = generate_qr_code(original_url, owner=owner)
+        qr_code = generate_qr_code(original_url, owner=owner, request=request)
         serializer = QRCodeSerializer(qr_code)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

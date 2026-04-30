@@ -244,14 +244,27 @@
     });
 
     async function deleteAccount() {
-        const confirmed = prompt('Type "DELETE" to permanently delete your account:');
-        if (confirmed !== 'DELETE') return;
-        const resp = await apiCall('/auth/me/', { method: 'DELETE' });
+        const password = prompt('Enter your password to permanently delete your account:');
+        if (!password) return;
+
+        const body = { password };
+        if (userHas2FA) {
+            const totpCode = prompt('Enter your current 6-digit 2FA code:');
+            if (!totpCode) return;
+            body.totp_code = totpCode;
+        }
+
+        const resp = await apiCall('/auth/me/', {
+            method: 'DELETE',
+            body: JSON.stringify(body)
+        });
+
         if (resp && (resp.status === 204 || resp.ok)) {
-            clearTokens();
+            clearAuthIndicator();
             window.location.href = '/';
         } else {
-            showAlert('Failed to delete account');
+            const data = resp ? await resp.json().catch(() => ({})) : {};
+            showAlert(data.error || 'Failed to delete account');
         }
     }
 

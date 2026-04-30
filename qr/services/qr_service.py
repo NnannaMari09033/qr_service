@@ -11,7 +11,7 @@ MAX_RETRIES = 5
 ALLOWED_SCHEMES = ('http', 'https')
 
 
-def generate_qr_code(original_url, owner=None):
+def generate_qr_code(original_url, owner=None, request=None):
     parsed = urlparse(original_url)
     if parsed.scheme not in ALLOWED_SCHEMES:
         raise ValueError("Only http and https URLs are allowed")
@@ -19,7 +19,14 @@ def generate_qr_code(original_url, owner=None):
         short_code = str(uuid.uuid4()).replace('-', '')[:8]
 
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        redirect_url = f"/qr/redirect/{short_code}/"
+        redirect_path = f"/qr/redirect/{short_code}/"
+        # Phone scanners need an absolute URL (https://host/qr/redirect/...).
+        # Fall back to the relative path only when called outside an HTTP request,
+        # e.g. from tests or management commands.
+        if request is not None:
+            redirect_url = request.build_absolute_uri(redirect_path)
+        else:
+            redirect_url = redirect_path
         qr.add_data(redirect_url)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")

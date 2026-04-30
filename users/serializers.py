@@ -8,6 +8,14 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email']
         read_only_fields = ['id']
 
+    def validate_email(self, value):
+        qs = User.objects.filter(email__iexact=value)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return value
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
@@ -16,6 +24,16 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'email', 'password', 'password2']
+
+    def validate_username(self, value):
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError('A user with this username already exists.')
+        return value
+
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return value
 
     def validate(self, data):
         if data['password'] != data['password2']:

@@ -1,3 +1,4 @@
+import json
 import os
 from urllib.parse import urlparse
 
@@ -5,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, serializers
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.http import FileResponse, Http404
 from django.conf import settings
 from drf_spectacular.utils import extend_schema, OpenApiResponse
@@ -13,6 +14,7 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse
 from .models import QRCode
 from .serializers import QRCodeSerializer
 from .services.qr_service import generate_qr_code
+from .throttles import AnonCreateQRThrottle
 from analytics.models import Scan
 
 
@@ -23,6 +25,14 @@ class CreateQRInputSerializer(serializers.Serializer):
 
 class QRCodeListView(APIView):
     permission_classes = [AllowAny]
+
+    def get_throttles(self):
+        # Apply a stricter throttle to anonymous POSTs so the public
+        # create endpoint cannot be used to flood the short-code namespace
+        # or chew up disk. Authenticated users keep the default UserRateThrottle.
+        if self.request.method == 'POST' and not self.request.user.is_authenticated:
+            return [AnonCreateQRThrottle()]
+        return super().get_throttles()
 
     @extend_schema(
         summary="List your QR codes",
@@ -130,11 +140,22 @@ class QRCodeDetailView(APIView):
 
 
 class RedirectQRView(APIView):
+    """Public redirect endpoint with open-redirect mitigation.
+
+    For owners (authenticated as the QR's creator) and for confirmed
+    follow-throughs (?go=1), record the scan and 302 to the destination.
+    For everyone else, render an interstitial that displays the destination
+    URL so the user can decide whether to continue. This prevents the
+    service from being used as a transparent open-redirect for phishing.
+    """
     permission_classes = [AllowAny]
 
     @extend_schema(
         summary="Redirect to original URL (scan tracking)",
-        responses={302: OpenApiResponse(description="Redirects to the original URL")},
+        responses={
+            200: OpenApiResponse(description="Renders an interstitial confirmation page"),
+            302: OpenApiResponse(description="Redirects to the original URL"),
+        },
     )
     def get(self, request, short_code):
         try:
@@ -145,15 +166,6 @@ class RedirectQRView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        ip_address = request.META.get('REMOTE_ADDR')
-        user_agent = request.META.get('HTTP_USER_AGENT', '')
-
-        Scan.objects.create(
-            qr_code=qr_code,
-            ip_address=ip_address,
-            user_agent=user_agent
-        )
-
         parsed = urlparse(qr_code.original_url)
         if parsed.scheme not in ('http', 'https'):
             return Response(
@@ -161,6 +173,23 @@ class RedirectQRView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        is_owner = (
+            request.user.is_authenticated and qr_code.owner_id == request.user.id
+        )
+        confirmed = request.GET.get('go') == '1'
+
+        if not (is_owner or confirmed):
+            continue_url = f"{request.path}?go=1"
+            return render(request, 'redirect_interstitial.html', {
+                'destination_json': json.dumps(qr_code.original_url),
+                'continue_url_json': json.dumps(continue_url),
+            })
+
+        Scan.objects.create(
+            qr_code=qr_code,
+            ip_address=request.META.get('REMOTE_ADDR'),
+            user_agent=request.META.get('HTTP_USER_AGENT', ''),
+        )
         return redirect(qr_code.original_url)
 
 

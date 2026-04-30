@@ -22,6 +22,7 @@ from .authentication import (
     REFRESH_COOKIE_NAME,
 )
 from .serializers import RegisterSerializer, UserSerializer
+from .throttles import LoginRateThrottle
 from .tokens import Pre2FAToken
 
 
@@ -72,6 +73,7 @@ class LoginView(APIView):
     Otherwise, sets HttpOnly access/refresh cookies and an is_authenticated indicator.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
     @extend_schema(summary="Log in with username and password")
     def post(self, request):
@@ -273,6 +275,7 @@ class Verify2FAView(APIView):
     token is useless on its own and only valid as input to this endpoint.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
     @extend_schema(summary="Verify 2FA code during login")
     def post(self, request):

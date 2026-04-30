@@ -75,6 +75,15 @@ class QRCodeListViewTest(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(len(resp.data), 0)
 
+    def test_anonymous_create_throttled_after_burst(self):
+        # Configured rate for anon_create_qr is 5/hour.
+        last = None
+        for _ in range(6):
+            last = self.client.post(
+                '/qr/', {'original_url': 'https://example.com'}, format='json'
+            )
+        self.assertEqual(last.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
 
 @override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
 class QRCodeDetailViewTest(APITestCase):
@@ -137,14 +146,33 @@ class RedirectQRViewTest(APITestCase):
     def setUp(self):
         cache.clear()
         self.user = User.objects.create_user(username='alice', email='a@x.com', password='strong-pw-123')
+        self.other = User.objects.create_user(username='bob', email='b@x.com', password='strong-pw-123')
         self.qr = generate_qr_code('https://example.com', owner=self.user)
 
-    def test_redirects_and_records_scan(self):
+    def test_anon_sees_interstitial_and_no_scan_recorded(self):
+        resp = self.client.get(f'/qr/redirect/{self.qr.short_code}/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn(b'leaving QR Service', resp.content)
         self.assertEqual(Scan.objects.filter(qr_code=self.qr).count(), 0)
+
+    def test_anon_with_go_param_redirects_and_records_scan(self):
+        resp = self.client.get(f'/qr/redirect/{self.qr.short_code}/?go=1')
+        self.assertEqual(resp.status_code, status.HTTP_302_FOUND)
+        self.assertEqual(resp['Location'], 'https://example.com')
+        self.assertEqual(Scan.objects.filter(qr_code=self.qr).count(), 1)
+
+    def test_owner_redirects_directly(self):
+        self.client.force_authenticate(self.user)
         resp = self.client.get(f'/qr/redirect/{self.qr.short_code}/')
         self.assertEqual(resp.status_code, status.HTTP_302_FOUND)
         self.assertEqual(resp['Location'], 'https://example.com')
         self.assertEqual(Scan.objects.filter(qr_code=self.qr).count(), 1)
+
+    def test_non_owner_authenticated_sees_interstitial(self):
+        self.client.force_authenticate(self.other)
+        resp = self.client.get(f'/qr/redirect/{self.qr.short_code}/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn(b'leaving QR Service', resp.content)
 
     def test_404_for_missing_code(self):
         resp = self.client.get('/qr/redirect/doesnotexist/')

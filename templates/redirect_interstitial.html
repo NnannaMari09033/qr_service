@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Leaving QR Service{% endblock %}
+
+{% block content %}
+<div style="max-width: 520px; margin: 4rem auto;" class="fade-in">
+    <div class="card" style="padding: 2rem;">
+        <div style="width: 56px; height: 56px; background: var(--accent-light); border-radius: 50%;
+                    display: flex; align-items: center; justify-content: center; margin: 0 auto 1.2rem;">
+            <svg width="28" height="28" fill="none" stroke="var(--accent)" stroke-width="2.5" viewBox="0 0 24 24">
+                <path d="M12 9v4m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 0 0-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/>
+            </svg>
+        </div>
+        <h1 style="font-size: 1.3rem; font-weight: 700; text-align: center; color: var(--text);">
+            You're leaving QR Service
+        </h1>
+        <p style="color: var(--text-secondary); text-align: center; margin-top: 0.6rem; font-size: 0.95rem;">
+            This QR code will take you to a third-party site. Only continue if you trust the destination.
+        </p>
+
+        <div style="background: var(--bg-surface-alt); border: 1px solid var(--border);
+                    border-radius: 12px; padding: 1rem; margin: 1.5rem 0;
+                    word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                    font-size: 0.85rem; color: var(--text);">
+            <div class="text-muted text-sm" style="margin-bottom: 0.3rem;">Destination</div>
+            <span id="destination"></span>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem;">
+            <a href="/" class="btn btn-secondary" style="flex: 1;">Cancel</a>
+            <a id="continue-btn" href="#" class="btn btn-accent" style="flex: 1;">Continue</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const dest = {{ destination_json|safe }};
+        const continueUrl = {{ continue_url_json|safe }};
+        document.getElementById('destination').textContent = dest;
+        document.getElementById('continue-btn').setAttribute('href', continueUrl);
+    })();
+</script>
+{% endblock %}

@@ -2,11 +2,14 @@
 
 A full-stack Django application for generating QR codes, tracking scans, and viewing analytics. Built with Django REST Framework on the backend and vanilla HTML/CSS/JavaScript on the frontend.
 
+Live at: https://qrservice-production-5d69.up.railway.app/
+
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Security Story](#security-story)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
@@ -17,8 +20,9 @@ A full-stack Django application for generating QR codes, tracking scans, and vie
 - [API Endpoints](#api-endpoints)
 - [Authentication Flow](#authentication-flow)
 - [Security](#security)
-- [Frontend Design System](#frontend-design-system)
+- [Frontend](#frontend)
 - [How the Frontend Talks to the Backend](#how-the-frontend-talks-to-the-backend)
+- [Deployment](#deployment)
 - [Claude Code Integration](#claude-code-integration)
 - [Troubleshooting](#troubleshooting)
 
@@ -26,37 +30,70 @@ A full-stack Django application for generating QR codes, tracking scans, and vie
 
 ## Overview
 
-QR Service lets authenticated users:
+QR Service lets users:
 
-1. Generate QR codes that redirect to any URL they choose.
-2. Track every scan (timestamp, IP, user agent, referrer).
+1. Generate QR codes that redirect to any URL.
+2. Track every scan (timestamp, IP, user agent).
 3. View analytics and manage their codes from a dashboard.
-4. Secure their account with email verification and TOTP-based 2FA.
+4. Secure their account with TOTP-based 2FA.
 
-The API is fully documented via Swagger UI at `/docs/`, and the frontend is rendered directly by Django templates (no SPA build step required).
+The API is documented at `/docs/` (Swagger UI). The frontend is rendered directly by Django templates — no separate SPA build.
+
+---
+
+## Security Story
+
+This project went through a deliberate security review. The findings below are the ones that materially shaped the codebase. The README leads with this section because the security model is the part of the project most worth understanding.
+
+### 2FA bypass — caught and fixed
+
+The first 2FA implementation issued a real JWT immediately after the password check, then asked the client to call `/auth/2fa/verify/` to "complete" login. That meant anyone with a valid password already held a working access token — the TOTP step was advisory, not enforced. Fixed by introducing a custom JWT type, [`Pre2FAToken`](users/tokens.py), with `token_type='pre_2fa'` and a 5-minute lifetime. The pre-token cannot authenticate any endpoint; the only place it is accepted is `/auth/2fa/verify/`, which exchanges it for real cookies after a TOTP code matches. Token-type binding is enforced by SimpleJWT, so even an attacker who somehow obtained a regular access token cannot present it at the verify endpoint. Tested at [`users/tests.py`](users/tests.py) (`TwoFactorLoginFlowTest`).
+
+### Tokens out of localStorage, into HttpOnly cookies
+
+Storing JWTs in `localStorage` means a single XSS = full account takeover. Migrated authentication to `HttpOnly` + `Secure` + `SameSite=Lax` cookies issued by the server. Cookies are inaccessible to JavaScript, the access cookie is scoped to `/`, the refresh cookie is scoped to `/auth/`, and a non-`HttpOnly` `is_authenticated` indicator cookie tells the frontend whether to render logged-in UI without ever exposing the token itself. Implemented in [`users/authentication.py`](users/authentication.py) and [`users/views.py`](users/views.py).
+
+### Account deletion confirmation
+
+Account deletion now requires the password (and a TOTP code if 2FA is enabled), validated server-side. A stolen access token cannot delete the account on its own. See [`ProfileView.delete`](users/views.py).
+
+### Open-redirect mitigation
+
+The redirect endpoint used to 302 to whatever URL the QR pointed at. That meant a phishing actor could host a QR that linked through `qrservice...up.railway.app/qr/redirect/<code>/` and inherit our domain's reputation. Now, anonymous and non-owner requests render a confirmation page that displays the destination URL; only `?go=1` follow-through (or an authenticated owner) triggers the actual redirect. Implemented in [`RedirectQRView`](qr/views.py) and [`templates/redirect_interstitial.html`](templates/redirect_interstitial.html).
+
+### Brute-force surface
+
+- `/auth/login/` and `/auth/2fa/verify/` are throttled at **10/minute per IP** ([`users/throttles.py`](users/throttles.py)).
+- Anonymous `POST /qr/` is throttled at **5/hour** ([`qr/throttles.py`](qr/throttles.py)) so the public create endpoint cannot be used to flood the short-code namespace or fill disk.
+- Authenticated traffic uses the default `100/minute` budget.
+
+### Other hardening
+
+- **URL scheme allowlist** on QR payloads (`http`/`https` only) — blocks `javascript:`, `data:`, `file:`, `ftp:`. Enforced in [`qr/services/qr_service.py`](qr/services/qr_service.py) and at every QR write entry point.
+- **Path traversal protection** on `/qr/image/<code>.png` via `os.path.realpath` containment check ([`QRCodeImageView`](qr/views.py)).
+- **Case-insensitive email + username uniqueness** ([`users/serializers.py`](users/serializers.py)) — Django's default `unique=True` is case-sensitive, which would let `Alice@x.com` and `alice@x.com` both register.
+- **CSRF_TRUSTED_ORIGINS** correctly handles the `.up.railway.app` subdomain wildcard via `https://*.up.railway.app` ([`config/settings/production.py`](config/settings/production.py)).
+- **Token rotation + blacklist** on every refresh.
+- **HSTS, SSL redirect, secure cookies, content-type-nosniff** in production.
 
 ---
 
 ## Features
 
 ### Core
-- **QR code generation** — turn any URL into a scannable PNG.
-- **Scan tracking** — every time a QR is scanned, the redirect endpoint records a `Scan` row with metadata.
-- **Analytics dashboard** — per-code totals, recent activity, and per-user aggregates.
-- **Per-user ownership** — users can only see and manage their own codes.
+- QR code generation — any URL → scannable PNG (encodes the absolute redirect URL so phone scanners work without context).
+- Scan tracking — every redirect records IP and user agent.
+- Analytics dashboard — per-code totals and recent activity.
+- Per-user ownership — users see and manage only their own codes.
 
-### Authentication & Security
-- **JWT authentication** (SimpleJWT) with access + refresh tokens and token rotation/blacklisting.
-- **Mandatory email verification** via django-allauth (console backend in dev, SMTP in prod).
-- **Two-factor authentication** (TOTP) with Google Authenticator / Authy / 1Password compatibility.
-- **Rate limiting** via DRF throttling (30/min anon, 100/min user).
-- **URL scheme allowlist** on QR payloads (only `http`/`https` accepted).
-- **Path traversal protection** on media file serving.
-- **XSS-safe templates** using `textContent` / `escapeHtml()` in all client-side rendering.
+### Authentication
+- JWT in HttpOnly cookies (custom `CookieJWTAuthentication`).
+- Optional TOTP 2FA via authenticator apps (Google Authenticator, Authy, 1Password).
+- Pre2FA token type that gates real session cookies behind a verified TOTP code.
+- Password + TOTP confirmation required for account deletion.
 
 ### Quality
-
-- **Automated test suite** — 45 tests covering QR CRUD, ownership enforcement, scheme allowlist, path traversal, JWT login, 2FA setup/verify/disable, and analytics scoping.
+- 64 automated tests covering QR CRUD, ownership scoping, scheme allowlist, path traversal, redirect interstitial, login flow, 2FA bypass attempts, cookie auth, throttling, account deletion, analytics scoping.
 
 ---
 
@@ -67,12 +104,13 @@ The API is fully documented via Swagger UI at `/docs/`, and the frontend is rend
 | Language | Python 3.12 |
 | Web framework | Django 6.0 |
 | API framework | Django REST Framework |
-| Auth | djangorestframework-simplejwt, django-allauth, django-otp |
+| Auth | djangorestframework-simplejwt + custom Pre2FAToken, django-otp |
 | Database | PostgreSQL (via psycopg2-binary, dj-database-url) |
 | QR generation | qrcode, pillow |
 | API docs | drf-spectacular (Swagger UI) |
 | Frontend | Django templates, vanilla JS, DM Sans font |
-| Deployment | Procfile-based (Heroku / Render / Railway compatible) |
+| Static files | whitenoise |
+| Deployment | Railway (Nixpacks build, `railway.json` start command) |
 
 ---
 
@@ -80,41 +118,46 @@ The API is fully documented via Swagger UI at `/docs/`, and the frontend is rend
 
 ```
 qr_service/
-├── config/                    Project-level Django configuration
+├── config/
 │   ├── settings/
-│   │   ├── base.py            Shared settings (apps, middleware, REST, JWT, allauth)
-│   │   ├── development.py     Dev overrides (.env loading, SECRET_KEY validation)
-│   │   └── production.py      Prod overrides (HSTS, SSL redirect, STORAGES)
-│   ├── urls.py                Root URL router (frontend + API + admin + allauth)
-│   ├── frontend_views.py      Views that render the HTML templates
+│   │   ├── base.py            Shared (apps, middleware, REST, JWT, throttle rates)
+│   │   ├── development.py     Dev overrides (.env loading)
+│   │   └── production.py      HSTS, SSL redirect, CSRF wildcard, whitenoise
+│   ├── urls.py                Root URL router
+│   ├── frontend_views.py      Renders the HTML templates
 │   └── wsgi.py / asgi.py
-├── qr/                        QR code generation & management
+├── qr/
 │   ├── models.py              QRCode model
-│   ├── views.py               CRUD + redirect + image serving endpoints
-│   ├── services/qr_service.py PNG generation with scheme allowlist
+│   ├── views.py               CRUD + redirect (with interstitial) + image serving
+│   ├── services/qr_service.py PNG generation, absolute-URL encoding, scheme allowlist
+│   ├── throttles.py           AnonCreateQRThrottle (5/hour for anonymous POSTs)
 │   └── urls.py
-├── analytics/                 Scan tracking
+├── analytics/
 │   ├── models.py              Scan model
-│   ├── views.py               Analytics endpoints
+│   ├── views.py               Per-user stats endpoints
 │   └── urls.py
-├── users/                     Authentication
-│   ├── views.py               Register, login (me), 2FA setup/confirm/disable/verify
-│   ├── serializers.py
+├── users/
+│   ├── views.py               Register, login, logout, refresh, profile, 2FA, verify
+│   ├── authentication.py      CookieJWTAuthentication (reads access cookie)
+│   ├── tokens.py              Pre2FAToken (custom JWT type for 2FA gating)
+│   ├── throttles.py           LoginRateThrottle (10/min for /auth/login/)
+│   ├── serializers.py         RegisterSerializer with case-insensitive uniqueness
 │   └── urls.py
-├── templates/                 Server-rendered HTML
-│   ├── base.html              Layout, nav, global CSS variables, helper JS
-│   ├── landing.html           Marketing page
-│   ├── login.html             Login form + 2FA challenge
-│   ├── register.html          Signup form + email verification notice
-│   ├── dashboard.html         Code list, create form, modal
-│   └── settings.html          Profile, 2FA setup, danger zone
+├── templates/
+│   ├── base.html              Layout, CSS variables, cookie-aware JS helpers
+│   ├── landing.html
+│   ├── login.html             Login + 2FA challenge (uses pre_auth_token in memory)
+│   ├── register.html          Honest "account created — go log in" flow
+│   ├── dashboard.html
+│   ├── settings.html          Profile, 2FA, danger zone (password + TOTP delete)
+│   └── redirect_interstitial.html  Open-redirect confirmation page
 ├── storage/                   Generated QR PNGs (MEDIA_ROOT)
-├── staticfiles/               Collected static assets
 ├── manage.py
-├── Procfile                   Deployment entrypoint (gunicorn)
 ├── requirements.txt
+├── railway.json               Railway build + startCommand (migrate then gunicorn)
+├── Procfile                   Fallback deployment entrypoint
 ├── CLAUDE.md                  Instructions for Claude Code
-└── .claude/settings.json      Claude Code permission rules (denies .env access)
+└── .claude/settings.json      Tool-level deny rules for `.env`
 ```
 
 ---
@@ -138,7 +181,7 @@ pip install -r requirements.txt
 
 ### Configure environment
 
-Create a `.env` file in the project root (never commit this file — it is already gitignored and blocked from Claude Code):
+Create a `.env` file in the project root (already gitignored and blocked from Claude Code):
 
 ```bash
 DJANGO_SECRET_KEY=your-50-char-random-secret
@@ -172,19 +215,21 @@ python manage.py createsuperuser
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DJANGO_SECRET_KEY` | yes | Django secret key. Validated on dev and prod startup. |
-| `DJANGO_DEBUG` | no | `True` in development, `False` in production. Default: `False`. |
-| `DJANGO_ALLOWED_HOSTS` | prod | Comma-separated list of hosts. |
-| `DATABASE_URL` | alt | Postgres URL; takes precedence over the `DB_*` variables. |
+| `DJANGO_SECRET_KEY` | yes | Django secret key. Validated on startup. |
+| `DJANGO_DEBUG` | no | `True` in development, `False` (default) in production. |
+| `DJANGO_ALLOWED_HOSTS` | prod | Comma-separated host list. |
+| `DJANGO_SETTINGS_MODULE` | prod | `config.settings.production` |
+| `DATABASE_URL` | alt | Full Postgres URL; takes precedence over `DB_*`. |
 | `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | alt | Discrete Postgres credentials. |
-| `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | prod | SMTP config for verification emails (dev uses console). |
+
+> **Note:** Email verification is currently disabled (`ACCOUNT_EMAIL_VERIFICATION = 'none'`). The dev email backend writes to the console. To enable real email, configure SMTP env vars and switch the backend in `base.py`.
 
 ---
 
 ## Running the App
 
 ```bash
-# Development (http://localhost:8000)
+# Development server (http://localhost:8000)
 python manage.py runserver
 
 # Tests
@@ -198,10 +243,10 @@ python manage.py migrate
 python manage.py collectstatic --noinput
 ```
 
-URLs once running:
+Routes once running:
 
-| URL | What it serves |
-|-----|----------------|
+| URL | Serves |
+|-----|--------|
 | `/` | Marketing landing page |
 | `/register/` | Signup |
 | `/login/` | Login (+ 2FA step if enabled) |
@@ -209,81 +254,63 @@ URLs once running:
 | `/settings/` | Profile, 2FA, danger zone |
 | `/docs/` | Swagger UI |
 | `/admin/` | Django admin |
+| `/qr/redirect/<code>/` | Public redirect (interstitial for non-owners) |
 
 ---
 
 ## Testing
 
-The project ships with a Django test suite of **45 tests** across three apps.
+64 tests across `qr/`, `users/`, `analytics/`.
 
-### What's covered
-
-| File | Tests |
-| ---- | ----- |
-| `qr/tests.py` | QR service URL-scheme validation, CRUD ownership scoping, redirect + scan recording, image endpoint path-traversal protection |
-| `users/tests.py` | Registration (happy path, password mismatch, short password), JWT login, profile GET/PUT/DELETE, `has_2fa` flag, full 2FA lifecycle (setup → confirm → verify → disable) with real TOTP codes |
-| `analytics/tests.py` | Stats scoped to owner, 404 for other users' codes, aggregate counts |
+| File | Coverage |
+|------|----------|
+| [`qr/tests.py`](qr/tests.py) | URL-scheme validation, CRUD ownership scoping, redirect interstitial (anonymous, owner, non-owner, `?go=1`), image path-traversal protection, anonymous QR throttle |
+| [`users/tests.py`](users/tests.py) | Registration (happy path, duplicate email/username case-insensitive, mismatched/short password), cookie login (no-2FA path), 2FA login flow (pre-token cannot authenticate, regular access token rejected at verify endpoint, valid TOTP issues full cookies), cookie refresh, logout, profile GET/PUT, account deletion (password required, TOTP required when 2FA enabled), full 2FA setup/confirm/disable lifecycle, login throttle |
+| [`analytics/tests.py`](analytics/tests.py) | Stats scoped to owner, 404 for other users' codes |
 
 ### One-time setup
 
-Django needs permission to create the test database. Grant it once:
+Django needs CREATEDB on its database role:
 
 ```bash
 sudo -u postgres psql -c "ALTER USER <your-db-user> CREATEDB;"
 ```
 
-### Run the full suite
+### Run
 
 ```bash
-python manage.py test
+python manage.py test                            # full suite, ~3 minutes first run
+python manage.py test --keepdb --parallel auto   # day-to-day, much faster
+python manage.py test users.tests.TwoFactorLoginFlowTest
 ```
 
-First run takes ~75s (creating the DB + running every migration).
-
-### Run fast (recommended for day-to-day)
-
-```bash
-python manage.py test --keepdb --parallel auto
-```
-
-- `--keepdb` reuses the test database between runs, skipping the slow DB creation + migrations step. Drops subsequent runs from ~75s to a few seconds.
-- `--parallel auto` spreads tests across all CPU cores.
-
-If you change a model, drop the cached test DB once so migrations re-apply:
+If you change a model, drop the cached test DB once:
 
 ```bash
 dropdb test_qr_service && python manage.py test --keepdb
-```
-
-### Run a subset
-
-```bash
-python manage.py test qr                    # just the qr app
-python manage.py test users.tests.TwoFactorConfirmTest    # one class
-python manage.py test qr.tests.QRCodeServiceTest.test_accepts_http_and_https  # one test
 ```
 
 ---
 
 ## API Endpoints
 
-All API endpoints return JSON and (except those noted) require a `Authorization: Bearer <access_token>` header.
+All API endpoints return JSON. Authenticated endpoints accept either an auth cookie (set by the login flow) **or** an `Authorization: Bearer <access_token>` header (used by tests / curl).
 
 ### Auth (`/auth/`)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/register/` | public | Create account; triggers verification email |
-| POST | `/auth/login/` | public | Returns `{access, refresh}` |
-| POST | `/auth/refresh/` | public | Rotate refresh token |
-| POST | `/auth/logout/` | user | Blacklists refresh token |
+| POST | `/auth/register/` | public | Create account |
+| POST | `/auth/login/` | public | Set HttpOnly cookies, or return `pre_auth_token` if 2FA |
+| POST | `/auth/2fa/verify/` | public | Exchange `pre_auth_token` + TOTP code for real cookies |
+| POST | `/auth/refresh/` | public | Rotate refresh cookie, set new access cookie |
+| POST | `/auth/logout/` | public | Blacklist refresh, clear all auth cookies |
 | GET | `/auth/me/` | user | Profile (includes `has_2fa`) |
 | PUT | `/auth/me/` | user | Update profile |
-| DELETE | `/auth/me/` | user | Delete account |
-| POST | `/auth/2fa/setup/` | user | Returns QR code PNG + secret |
-| POST | `/auth/2fa/confirm/` | user | Confirms TOTP code and activates 2FA |
-| POST | `/auth/2fa/verify/` | user | Verifies code during login |
-| POST | `/auth/2fa/disable/` | user | Disables 2FA (requires current code) |
+| DELETE | `/auth/me/` | user | Delete account (requires password + TOTP if 2FA on) |
+| POST | `/auth/2fa/setup/` | user | Returns enrolment QR code + secret |
+| POST | `/auth/2fa/confirm/` | user | Confirm enrolment with first TOTP code |
+| POST | `/auth/2fa/disable/` | user | Disable 2FA (requires current TOTP code) |
 
 ### QR Codes (`/qr/`)
 
@@ -291,105 +318,105 @@ All API endpoints return JSON and (except those noted) require a `Authorization:
 |--------|------|-------------|
 | GET | `/qr/` | List the authenticated user's codes |
 | POST | `/qr/` | Create a code from a URL |
-| GET | `/qr/<id>/` | Retrieve a single code |
-| PUT | `/qr/<id>/` | Update target URL |
-| DELETE | `/qr/<id>/` | Delete code and its PNG |
-| GET | `/qr/<id>/image/` | Serve the code's PNG (traversal-safe) |
-| GET | `/qr/r/<slug>/` | **Public redirect** — records a scan, then 302s to the target URL |
+| GET | `/qr/<short_code>/` | Retrieve a single code |
+| PUT | `/qr/<short_code>/` | Update target URL |
+| DELETE | `/qr/<short_code>/` | Delete code |
+| GET | `/qr/image/<short_code>.png` | Serve the PNG (path-traversal-safe) |
+| GET | `/qr/redirect/<short_code>/` | **Public redirect** — interstitial for non-owners; `?go=1` to follow through |
 
 ### Analytics (`/analytics/`)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/analytics/` | Aggregate stats for the current user |
-| GET | `/analytics/<qr_id>/` | Per-code scan history |
+| GET | `/analytics/<short_code>/` | Per-code scan history |
 
 ---
 
 ## Authentication Flow
 
 ### Signup
-1. User submits email, username, password on `/register/`.
+1. User submits username + email + password on `/register/`.
 2. Frontend POSTs to `/auth/register/`.
-3. Backend creates user (inactive-ish) and sends a verification email via allauth.
-4. User clicks link in email → account is verified and can log in.
+3. Backend creates the account.
+4. UI shows "Account created — go log in".
 
 ### Login (no 2FA)
-1. User submits credentials on `/login/`.
-2. Frontend POSTs to `/auth/login/` and receives `{access, refresh}`.
-3. Tokens are stored in `localStorage`.
-4. Redirect to `/dashboard/`.
+1. POST to `/auth/login/`.
+2. Backend verifies credentials, sets three cookies on the response: `access_token` (HttpOnly), `refresh_token` (HttpOnly, scoped to `/auth/`), `is_authenticated` (readable, used only to render logged-in UI).
+3. Frontend redirects to `/dashboard/`.
 
 ### Login (with 2FA)
-1. Same as above, but after receiving tokens the frontend calls `/auth/me/` and sees `has_2fa: true`.
-2. The 2FA form is shown; the user enters the 6-digit TOTP code.
-3. Frontend POSTs code to `/auth/2fa/verify/`.
-4. On success, tokens are committed and user is redirected.
+1. POST to `/auth/login/` — backend sees a confirmed TOTPDevice and returns `{ requires_2fa: true, pre_auth_token: "..." }`. **No auth cookies are set.**
+2. Frontend keeps `pre_auth_token` in a JS variable in memory only and prompts for the 6-digit code.
+3. POST to `/auth/2fa/verify/` with `{ pre_auth_token, code }`.
+4. Backend validates the token type is `pre_2fa`, looks up the user, checks the TOTP code against the device, and only then sets the real auth cookies.
 
-### Enabling 2FA
-1. User clicks **Enable 2FA** on `/settings/`.
-2. Backend creates an unconfirmed `TOTPDevice` and returns `{qr_code, secret}`.
-3. User scans the QR with their authenticator app.
-4. User enters the 6-digit code → `/auth/2fa/confirm/` marks the device confirmed.
+### Subsequent requests
+- Browser sends cookies automatically via `credentials: 'include'`.
+- `CookieJWTAuthentication` reads the access cookie (or falls back to a Bearer header for tests/curl) and resolves the user.
+- On 401, the frontend tries `/auth/refresh/` once; if that fails, it clears the indicator cookie and redirects to `/login/`.
 
 ---
 
 ## Security
 
-The codebase has been through a full security audit. Implemented mitigations:
-
 | Risk | Mitigation |
 |------|------------|
-| SSRF / malicious QR payloads | URL scheme allowlist (`http`, `https` only) enforced in `qr_service.py` and all `qr/views.py` entry points |
-| Path traversal via media | `QRCodeImageView` resolves paths with `Path.resolve()` and verifies containment in `MEDIA_ROOT` |
-| Orphaned files on delete | Delete handler removes the PNG after the DB row is deleted |
-| XSS in templates | All user data rendered via `textContent` or `escapeHtml()`; `showAlert()` uses `textContent` |
-| Missing CSRF / clickjacking | `XFrameOptionsMiddleware`, `CsrfViewMiddleware`, HSTS (prod), SSL redirect (prod) |
-| Open redirect | Redirect view only sends users to URLs stored by authenticated code owners, and those URLs are scheme-validated |
+| 2FA bypass | `Pre2FAToken` with token-type binding — pre-token cannot authenticate any endpoint, only `/auth/2fa/verify/` accepts it |
+| XSS → token theft | Tokens in `HttpOnly` + `Secure` + `SameSite=Lax` cookies; `localStorage` no longer used |
+| CSRF | `SameSite=Lax` cookies, Django CSRF middleware, `CSRF_TRUSTED_ORIGINS` configured for the deployed origin |
+| Open redirect | Confirmation interstitial shown to non-owners on `/qr/redirect/<code>/` |
+| SSRF / malicious QR payloads | Scheme allowlist (`http`, `https`) at every write path |
+| Path traversal via media | `os.path.realpath` containment check inside `MEDIA_ROOT/qr_codes` |
+| Brute-force login | `LoginRateThrottle` 10/min per IP on `/auth/login/` and `/auth/2fa/verify/` |
+| Anonymous QR flooding | `AnonCreateQRThrottle` 5/hour per IP on `POST /qr/` |
+| Account takeover via stolen access token | Account deletion requires password (and TOTP if 2FA on) |
+| Duplicate-account spoofing | Case-insensitive uniqueness on username and email |
 | Token reuse after logout | `ROTATE_REFRESH_TOKENS=True`, `BLACKLIST_AFTER_ROTATION=True` |
-| Brute force login / signup | DRF throttling + allauth `ACCOUNT_RATE_LIMITS` (`5/m/ip` for login & signup) |
 | Weak passwords | Django's 4 built-in password validators |
-| Secret leakage | `SECRET_KEY` is required from env, never hardcoded; `.env` blocked at the Claude Code level |
+| Secret leakage | `SECRET_KEY` required from env; `.env` blocked at the Claude Code tool layer |
+| HTTPS downgrade (prod) | `SECURE_SSL_REDIRECT`, `SECURE_HSTS_*` |
 
 ---
 
-## Frontend Design System
+## Frontend
 
-The frontend takes visual cues from PiggyVest (Variant A palette):
+Hand-written CSS variables in [`templates/base.html`](templates/base.html) — no Tailwind, no React, no build step. Each page extends `base.html` and adds inline styles or a `<style>` block.
 
-| Token | Value |
-|-------|-------|
-| `--bg` | `#F7F7F3` (warm off-white) |
-| `--bg-surface` | `#FFFFFF` |
-| `--primary` | `#1A1D2E` (deep navy) |
-| `--primary-hover` | `#0F1220` |
-| `--accent` | `#E8526B` (coral) |
-| `--text` | `#1A1D2E` |
-| `--text-secondary` | `#5A5E6B` |
-| `--border` | `#E7E5DF` |
-| Font | DM Sans |
-
-No gradients, no Tailwind, no React. Just hand-written CSS variables in `templates/base.html` and inline styles per page. All buttons, inputs, and cards use the same rounded-12–14px radius and a consistent 1.5px border.
+Cookie-aware JS helpers (in `base.html`):
+- `isLoggedIn()` — reads the readable `is_authenticated` cookie.
+- `clearAuthIndicator()` — clears that indicator on logout.
+- `apiCall(path, opts)` — `fetch` wrapper that uses `credentials: 'include'` and auto-refreshes on 401.
+- `logout()` — POSTs to `/auth/logout/`, clears the indicator, redirects home.
+- `escapeHtml(str)` — escape for the rare cases `innerHTML` is unavoidable.
+- `showAlert(msg, type)` — `textContent`-based toast (XSS-safe).
 
 ---
 
 ## How the Frontend Talks to the Backend
 
-1. Django serves an HTML template (e.g. `dashboard.html`).
-2. The template's JavaScript calls the API via `fetch()`:
-   ```js
-   const resp = await fetch('/qr/', {
-     headers: { Authorization: 'Bearer ' + getAccessToken() },
-   });
-   ```
-3. Django REST Framework receives the request, validates the JWT (via `JWTAuthentication`), runs the view, and returns JSON.
-4. The JavaScript renders the JSON into the DOM — always escaping user input via `textContent` or `escapeHtml()`.
+1. Django serves a template (e.g. `dashboard.html`).
+2. The template's JS calls `apiCall('/qr/', {...})`.
+3. The browser attaches the `access_token` cookie automatically because `credentials: 'include'` is set.
+4. `CookieJWTAuthentication` reads it server-side and resolves the user.
+5. DRF validates, runs the view, returns JSON.
+6. JS renders the JSON via `textContent` or `escapeHtml()` — no `innerHTML` of unescaped user data.
 
-Helpers in `base.html`:
-- `apiCall(path, opts)` — `fetch` wrapper that auto-attaches the bearer token.
-- `saveTokens() / clearTokens() / isLoggedIn()` — localStorage helpers.
-- `showAlert(msg, type)` — XSS-safe toast.
-- `escapeHtml(str)` — escape HTML entities for any place where `innerHTML` is unavoidable.
+---
+
+## Deployment
+
+Deployed to Railway. Two deployment files live in the repo:
+
+- [`railway.json`](railway.json) — Nixpacks build + start command. The start command runs migrations on every deploy *before* gunicorn starts: `python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT`. Without the inline migrate, fresh databases hit `relation "..." does not exist` on first request.
+- [`Procfile`](Procfile) — fallback deployment entrypoint.
+
+Production-only settings live in [`config/settings/production.py`](config/settings/production.py):
+- HSTS (1 year, includeSubDomains, preload).
+- `SECURE_SSL_REDIRECT`, `SECURE_PROXY_SSL_HEADER` for the Railway HTTPS terminator.
+- `whitenoise` middleware for static files.
+- `CSRF_TRUSTED_ORIGINS` derived from `ALLOWED_HOSTS`, with `https://*.up.railway.app` subdomain wildcard handling.
 
 ---
 
@@ -397,7 +424,7 @@ Helpers in `base.html`:
 
 This project is set up to work safely with Claude Code.
 
-- **`CLAUDE.md`** — project-level instructions Claude reads on every session. Includes rules like "NEVER read, access, display, or reference any `.env` files".
+- **`CLAUDE.md`** — project-level instructions Claude reads on every session. Includes the rule "NEVER read, access, display, or reference any `.env` files".
 - **`.claude/settings.json`** — deny rules that block `.env` reads at the tool layer. Even if Claude ignored instructions, the tool call would be rejected.
 
 Example deny block:
@@ -420,19 +447,25 @@ Example deny block:
 ## Troubleshooting
 
 **`DJANGO_SECRET_KEY environment variable is required`**
-Your `.env` file is missing or not loaded. Make sure the file exists in the project root and contains `DJANGO_SECRET_KEY=...`. The check runs in `config/settings/development.py` after `.env` is loaded.
+Your `.env` is missing or not loaded. Make sure it's in the project root and contains `DJANGO_SECRET_KEY=...`.
 
-**`relation "auth_user" does not exist`**
-Your database is either empty or shared with another project that never ran Django's auth migrations. Run `python manage.py migrate` against a fresh database.
+**`relation "..." does not exist` on Railway**
+Migrations haven't run. Confirm `railway.json` `startCommand` runs `migrate --noinput` before `gunicorn`. The fix is in this repo, but if you forked an older version, that's the cause.
 
-**`SMTPSenderRefused` when signing up**
-In dev, `EMAIL_BACKEND` is set to `console.EmailBackend`, so the verification link is printed to your `runserver` log — click it from there. For production, set SMTP env vars.
+**Phone scanner "doesn't open the QR"**
+The QR encodes the absolute redirect URL using `request.build_absolute_uri()`, so it should always open. If it doesn't, check that the QR was generated *after* commit `8c53232` — older QRs encode a relative path and won't resolve outside the browser tab they were created in.
+
+**Login returns `requires_2fa: true` but no cookies**
+That's intentional. The frontend must call `/auth/2fa/verify/` with the `pre_auth_token` and a TOTP code to complete login.
+
+**`429 Too Many Requests` on `/auth/login/`**
+Throttle is 10/minute per IP. Wait a minute or test from a different network.
 
 **2FA QR code won't scan**
-Make sure you're using an authenticator app (Google Authenticator, Authy, 1Password), not a generic QR scanner. If the code doesn't match, verify your device clock is synced (TOTP is time-based).
+Use an authenticator app (Google Authenticator, Authy, 1Password), not a generic QR scanner. If codes don't match, check device clock sync — TOTP is time-based.
 
 **UI changes not showing**
-Hard-refresh your browser (Ctrl+Shift+R / Cmd+Shift+R) to bypass the CSS cache.
+Hard-refresh (Ctrl+Shift+R / Cmd+Shift+R) to bypass the CSS cache.
 
 ---
 

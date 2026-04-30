@@ -50,6 +50,47 @@ class RegisterViewTest(APITestCase):
         }, format='json')
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_rejects_duplicate_email_case_insensitive(self):
+        User.objects.create_user(username='alice', email='alice@x.com', password='strong-pw-123')
+        resp = self.client.post('/auth/register/', {
+            'username': 'alice2',
+            'email': 'ALICE@X.com',
+            'password': 'strong-pw-123',
+            'password2': 'strong-pw-123',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('email', resp.data)
+
+    def test_rejects_duplicate_username_case_insensitive(self):
+        User.objects.create_user(username='alice', email='a@x.com', password='strong-pw-123')
+        resp = self.client.post('/auth/register/', {
+            'username': 'ALICE',
+            'email': 'b@x.com',
+            'password': 'strong-pw-123',
+            'password2': 'strong-pw-123',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('username', resp.data)
+
+
+class LoginThrottleTest(APITestCase):
+    """The login endpoint should be rate-limited per IP to slow brute force."""
+
+    def setUp(self):
+        cache.clear()
+        User.objects.create_user(
+            username='alice', email='a@x.com', password='strong-pw-123'
+        )
+
+    def test_repeated_failed_logins_get_throttled(self):
+        # Configured rate is 10/minute. The 11th attempt must be 429.
+        last = None
+        for _ in range(11):
+            last = self.client.post('/auth/login/', {
+                'username': 'alice', 'password': 'wrong',
+            }, format='json')
+        self.assertEqual(last.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
 
 class LoginViewTest(APITestCase):
     def setUp(self):

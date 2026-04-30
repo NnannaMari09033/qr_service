@@ -135,6 +135,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '30/minute',
         'user': '100/minute',
+        'anon_create_qr': '5/hour',
+        'login': '10/minute',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }

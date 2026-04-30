@@ -16,8 +16,18 @@ _DEFAULT_HOSTS = [
 _env_hosts = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
 ALLOWED_HOSTS = list({*_DEFAULT_HOSTS, *_env_hosts})
 
+
+def _csrf_origin(host):
+    # Django expects an explicit scheme. A leading "." in ALLOWED_HOSTS is the
+    # subdomain wildcard syntax for that setting; CSRF_TRUSTED_ORIGINS uses
+    # "https://*.example.com" instead.
+    if host.startswith('.'):
+        return f'https://*{host}'
+    return f'https://{host}'
+
+
 CSRF_TRUSTED_ORIGINS = [
-    f'https://{h.lstrip(".")}' for h in ALLOWED_HOSTS if h not in ('localhost', '127.0.0.1')
+    _csrf_origin(h) for h in ALLOWED_HOSTS if h not in ('localhost', '127.0.0.1')
 ]
 
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')

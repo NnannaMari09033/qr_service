@@ -1,5 +1,4 @@
 import json
-import os
 from urllib.parse import urlparse
 
 from rest_framework.views import APIView
@@ -7,13 +6,12 @@ from rest_framework.response import Response
 from rest_framework import status, serializers
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.shortcuts import redirect, render
-from django.http import FileResponse, Http404
-from django.conf import settings
+from django.http import HttpResponse
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .models import QRCode
 from .serializers import QRCodeSerializer
-from .services.qr_service import generate_qr_code
+from .services.qr_service import generate_qr_code, render_qr_png
 from .throttles import AnonCreateQRThrottle
 from analytics.models import Scan
 
@@ -68,7 +66,7 @@ class QRCodeListView(APIView):
             )
 
         owner = request.user if request.user.is_authenticated else None
-        qr_code = generate_qr_code(original_url, owner=owner, request=request)
+        qr_code = generate_qr_code(original_url, owner=owner)
         serializer = QRCodeSerializer(qr_code)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -194,7 +192,13 @@ class RedirectQRView(APIView):
 
 
 class QRCodeImageView(APIView):
-    """Serve QR code images by short_code. Public endpoint."""
+    """Serve a QR PNG by short_code. Public endpoint.
+
+    The PNG is generated on demand from the QRCode row — nothing is stored
+    on disk. This makes the service stateless: an ephemeral filesystem
+    (e.g. on Railway redeploys) cannot lose anyone's data, because the only
+    durable artifact is the database row.
+    """
     permission_classes = [AllowAny]
 
     @extend_schema(
@@ -202,15 +206,20 @@ class QRCodeImageView(APIView):
         responses={(200, 'image/png'): bytes},
     )
     def get(self, request, short_code):
-        if '/' in short_code or '\\' in short_code or '..' in short_code:
-            raise Http404
+        try:
+            qr_code = QRCode.objects.get(short_code=short_code)
+        except QRCode.DoesNotExist:
+            return Response(
+                {'error': 'QR code not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-        image_path = os.path.join(settings.MEDIA_ROOT, 'qr_codes', f'{short_code}.png')
-        real_path = os.path.realpath(image_path)
-        allowed_dir = os.path.realpath(os.path.join(settings.MEDIA_ROOT, 'qr_codes'))
-        if not real_path.startswith(allowed_dir + os.sep):
-            raise Http404
+        redirect_url = request.build_absolute_uri(f'/qr/redirect/{qr_code.short_code}/')
+        png_bytes = render_qr_png(redirect_url)
 
-        if not os.path.exists(real_path):
-            raise Http404
-        return FileResponse(open(real_path, 'rb'), content_type='image/png')
+        response = HttpResponse(png_bytes, content_type='image/png')
+        # The QR encodes the redirect URL, which is keyed only on short_code
+        # and never changes — even when the destination URL is updated. Safe
+        # to cache aggressively.
+        response['Cache-Control'] = 'public, max-age=31536000, immutable'
+        return response

@@ -7,12 +7,11 @@ if not SECRET_KEY:
 
 DEBUG = False
 
-_DEFAULT_HOSTS = [
-    'qrservice-production-5d69.up.railway.app',
-    '.up.railway.app',
-    'localhost',
-    '127.0.0.1',
-]
+# Hosts come from DJANGO_ALLOWED_HOSTS (comma-separated). The ".up.railway.app"
+# subdomain wildcard is included by default because the Railway platform always
+# assigns a subdomain there, and forgetting to add it is the most common cause
+# of a "DisallowedHost" error on a first Railway deploy.
+_DEFAULT_HOSTS = ['.up.railway.app', 'localhost', '127.0.0.1']
 _env_hosts = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
 ALLOWED_HOSTS = list({*_DEFAULT_HOSTS, *_env_hosts})
 

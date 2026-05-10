@@ -13,7 +13,6 @@ class QRCode(models.Model):
     )
     original_url = models.URLField()
     short_code = models.CharField(max_length=20, unique=True)
-    image_path = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

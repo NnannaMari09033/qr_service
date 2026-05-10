@@ -1,18 +1,12 @@
-import tempfile
-
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from analytics.models import Scan
 from qr.services.qr_service import generate_qr_code
 
-TEST_MEDIA_ROOT = tempfile.mkdtemp(prefix='analytics_test_media_')
 
-
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
 class QRCodeStatsViewTest(APITestCase):
     def setUp(self):
         cache.clear()

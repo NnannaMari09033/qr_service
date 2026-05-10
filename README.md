@@ -1,19 +1,35 @@
 # QR Service
 
-A full-stack Django application for generating QR codes, tracking scans, and viewing analytics. Built with Django REST Framework on the backend and vanilla HTML/CSS/JavaScript on the frontend.
+**Know which banner, flier, or campaign your audience actually responded to.**
 
-Live at: https://qrservice-production-5d69.up.railway.app/
+QR Service is a self-hostable Django app for event planners, founders, and marketers who put QR codes on physical materials — banners, fliers, table-tents, packaging, conference booths — and want to know which placements are working. Generate a code, paste it on the artwork, and every scan is logged with a timestamp so you can see, in real numbers, where your audience is actually engaging.
+
+Live demo: https://qrservice-production-5d69.up.railway.app/
+
+---
+
+## Why this exists
+
+Most "QR code generators" stop at generating the image. That's the easy part. The valuable part is the *signal afterwards*:
+
+- The flier on the venue door got 142 scans, the one on the lobby table got 6 → next event, skip the lobby table.
+- The pitch deck slide got more scans than the booth banner → the deck is doing the work.
+- Two regional campaigns with identical creative show wildly different scan rates → something local is off.
+
+Without that data, you're guessing. With it, you can put your next dollar where attention already is.
+
+QR Service is built for that loop: **generate, paste, monitor, decide.**
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Security Story](#security-story)
+- [Why this exists](#why-this-exists)
 - [Features](#features)
+- [Quickstart](#quickstart)
+- [Security Story](#security-story)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
 - [Running the App](#running-the-app)
 - [Testing](#testing)
@@ -21,23 +37,11 @@ Live at: https://qrservice-production-5d69.up.railway.app/
 - [Authentication Flow](#authentication-flow)
 - [Security](#security)
 - [Frontend](#frontend)
-- [How the Frontend Talks to the Backend](#how-the-frontend-talks-to-the-backend)
 - [Deployment](#deployment)
+- [Contributing](#contributing)
 - [Claude Code Integration](#claude-code-integration)
 - [Troubleshooting](#troubleshooting)
-
----
-
-## Overview
-
-QR Service lets users:
-
-1. Generate QR codes that redirect to any URL.
-2. Track every scan (timestamp, IP, user agent).
-3. View analytics and manage their codes from a dashboard.
-4. Secure their account with TOTP-based 2FA.
-
-The API is documented at `/docs/` (Swagger UI). The frontend is rendered directly by Django templates — no separate SPA build.
+- [License](#license)
 
 ---
 
@@ -70,7 +74,7 @@ The redirect endpoint used to 302 to whatever URL the QR pointed at. That meant 
 ### Other hardening
 
 - **URL scheme allowlist** on QR payloads (`http`/`https` only) — blocks `javascript:`, `data:`, `file:`, `ftp:`. Enforced in [`qr/services/qr_service.py`](qr/services/qr_service.py) and at every QR write entry point.
-- **Path traversal protection** on `/qr/image/<code>.png` via `os.path.realpath` containment check ([`QRCodeImageView`](qr/views.py)).
+- **No filesystem access on image serving** — `/qr/image/<code>.png` generates the PNG in memory from the database row. There is no path traversal surface because no path is ever constructed from user input.
 - **Case-insensitive email + username uniqueness** ([`users/serializers.py`](users/serializers.py)) — Django's default `unique=True` is case-sensitive, which would let `Alice@x.com` and `alice@x.com` both register.
 - **CSRF_TRUSTED_ORIGINS** correctly handles the `.up.railway.app` subdomain wildcard via `https://*.up.railway.app` ([`config/settings/production.py`](config/settings/production.py)).
 - **Token rotation + blacklist** on every refresh.
@@ -129,7 +133,7 @@ qr_service/
 ├── qr/
 │   ├── models.py              QRCode model
 │   ├── views.py               CRUD + redirect (with interstitial) + image serving
-│   ├── services/qr_service.py PNG generation, absolute-URL encoding, scheme allowlist
+│   ├── services/qr_service.py On-demand PNG generation + scheme allowlist (stateless — no disk writes)
 │   ├── throttles.py           AnonCreateQRThrottle (5/hour for anonymous POSTs)
 │   └── urls.py
 ├── analytics/
@@ -151,7 +155,6 @@ qr_service/
 │   ├── dashboard.html
 │   ├── settings.html          Profile, 2FA, danger zone (password + TOTP delete)
 │   └── redirect_interstitial.html  Open-redirect confirmation page
-├── storage/                   Generated QR PNGs (MEDIA_ROOT)
 ├── manage.py
 ├── requirements.txt
 ├── railway.json               Railway build + startCommand (migrate then gunicorn)
@@ -162,7 +165,7 @@ qr_service/
 
 ---
 
-## Getting Started
+## Quickstart
 
 ### Prerequisites
 - Python 3.12+
@@ -172,7 +175,7 @@ qr_service/
 ### Install
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/NnannaMari09033/qr_service.git
 cd qr_service
 python3 -m venv venv
 source venv/bin/activate
@@ -368,7 +371,7 @@ All API endpoints return JSON. Authenticated endpoints accept either an auth coo
 | CSRF | `SameSite=Lax` cookies, Django CSRF middleware, `CSRF_TRUSTED_ORIGINS` configured for the deployed origin |
 | Open redirect | Confirmation interstitial shown to non-owners on `/qr/redirect/<code>/` |
 | SSRF / malicious QR payloads | Scheme allowlist (`http`, `https`) at every write path |
-| Path traversal via media | `os.path.realpath` containment check inside `MEDIA_ROOT/qr_codes` |
+| Path traversal via media | No PNG files served from disk — images generated on demand from DB rows |
 | Brute-force login | `LoginRateThrottle` 10/min per IP on `/auth/login/` and `/auth/2fa/verify/` |
 | Anonymous QR flooding | `AnonCreateQRThrottle` 5/hour per IP on `POST /qr/` |
 | Account takeover via stolen access token | Account deletion requires password (and TOTP if 2FA on) |
@@ -417,6 +420,23 @@ Production-only settings live in [`config/settings/production.py`](config/settin
 - `SECURE_SSL_REDIRECT`, `SECURE_PROXY_SSL_HEADER` for the Railway HTTPS terminator.
 - `whitenoise` middleware for static files.
 - `CSRF_TRUSTED_ORIGINS` derived from `ALLOWED_HOSTS`, with `https://*.up.railway.app` subdomain wildcard handling.
+
+### Stateless by design
+
+The container's filesystem is treated as ephemeral. The only durable artifact is the database — QR PNGs are generated on demand from `QRCode` rows. That means a Railway redeploy or container restart cannot lose anyone's data, and you can scale to multiple instances without coordinating shared media storage.
+
+---
+
+## Contributing
+
+Contributions are welcome — issues, PRs, ideas, all of it. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow. The short version:
+
+1. Comment on the issue you want to take so two people don't pick the same thing.
+2. Fork → branch → PR. Keep PRs scoped to one change; smaller is easier to review.
+3. Run `python manage.py test` and make sure the suite stays green.
+4. New behavior should come with a test. New endpoints should pass scheme/auth checks where relevant.
+
+If you're new here, look for the **`good first issue`** label — those are scoped, well-defined starter tasks. Don't have GitHub experience? File an issue describing what's confusing — that's a contribution too.
 
 ---
 

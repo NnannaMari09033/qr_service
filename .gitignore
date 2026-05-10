@@ -1,6 +1,12 @@
 venv/
 .env
+.env.*
+!.env.example
 __pycache__/
 *.pyc
 storage/
+staticfiles/
 db.sqlite3
+.DS_Store
+*.swp
+.idea/

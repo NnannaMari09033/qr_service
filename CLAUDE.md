@@ -1,22 +1,23 @@
 # QR Service
 
-A Django REST API for generating QR codes, tracking scans, and viewing analytics.
+A Django REST API for generating QR codes, tracking scans, and viewing analytics. Open source under MIT license.
 
 ## Project Structure
 
 - `config/` - Django project settings (split into base/development/production)
-- `qr/` - QR code generation and management (models, views, services)
-- `analytics/` - Scan tracking and analytics
-- `users/` - Authentication (JWT via SimpleJWT)
-- `templates/` - Frontend HTML templates (landing, login, register, dashboard, settings)
+- `qr/` - QR code generation and management. PNGs are rendered on demand from DB rows; no filesystem state.
+- `analytics/` - Scan tracking and per-code stats
+- `users/` - Cookie-based JWT auth, custom Pre2FAToken type for 2FA gating, TOTP via django-otp
+- `templates/` - Server-rendered HTML (landing, login, register, dashboard, settings, redirect interstitial)
 
 ## Tech Stack
 
 - Python 3.12, Django 6.0, Django REST Framework
 - PostgreSQL (via psycopg2-binary, dj-database-url)
-- JWT authentication (djangorestframework-simplejwt)
+- Authentication: SimpleJWT tokens delivered in HttpOnly cookies via `users/authentication.py:CookieJWTAuthentication`
+- 2FA: django-otp TOTPDevice; login flow uses a custom `Pre2FAToken` JWT type that only `/auth/2fa/verify/` accepts
 - API docs via drf-spectacular (Swagger at `/docs/`)
-- QR code generation via `qrcode` + `pillow`
+- QR code generation via `qrcode` + `pillow`, rendered in memory (`qr/services/qr_service.py:render_qr_png`)
 
 ## Commands
 

@@ -1,20 +1,13 @@
-import tempfile
-
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.test import override_settings
 from rest_framework import status
-from rest_framework.test import APIRequestFactory, APITestCase
+from rest_framework.test import APITestCase
 
 from analytics.models import Scan
 from qr.models import QRCode
 from qr.services.qr_service import generate_qr_code
-from qr.views import QRCodeImageView
-
-TEST_MEDIA_ROOT = tempfile.mkdtemp(prefix='qr_test_media_')
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
 class QRCodeServiceTest(APITestCase):
     def test_rejects_non_http_schemes(self):
         bad_urls = [
@@ -35,7 +28,6 @@ class QRCodeServiceTest(APITestCase):
         self.assertEqual(len(qr_http.short_code), 8)
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
 class QRCodeListViewTest(APITestCase):
     def setUp(self):
         cache.clear()
@@ -85,7 +77,6 @@ class QRCodeListViewTest(APITestCase):
         self.assertEqual(last.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
 class QRCodeDetailViewTest(APITestCase):
     def setUp(self):
         cache.clear()
@@ -141,7 +132,6 @@ class QRCodeDetailViewTest(APITestCase):
         self.assertTrue(QRCode.objects.filter(pk=self.qr.pk).exists())
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
 class RedirectQRViewTest(APITestCase):
     def setUp(self):
         cache.clear()
@@ -179,8 +169,14 @@ class RedirectQRViewTest(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
 class QRCodeImageViewTest(APITestCase):
+    """The image endpoint generates PNGs on demand from the DB row.
+
+    Nothing is stored on disk, so the test asserts the PNG can be served
+    even after the entire MEDIA_ROOT is wiped — which is exactly what
+    happens on a Railway redeploy.
+    """
+
     def setUp(self):
         cache.clear()
         self.user = User.objects.create_user(username='alice', email='a@x.com', password='strong-pw-123')
@@ -190,15 +186,35 @@ class QRCodeImageViewTest(APITestCase):
         resp = self.client.get(f'/qr/image/{self.qr.short_code}.png')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp['Content-Type'], 'image/png')
+        # PNG magic bytes — proves we returned a real image, not an empty body.
+        self.assertEqual(resp.content[:8], b'\x89PNG\r\n\x1a\n')
 
-    def test_404_for_missing_image(self):
+    def test_404_for_unknown_short_code(self):
         resp = self.client.get('/qr/image/nosuchcode.png')
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_blocks_path_traversal(self):
-        view = QRCodeImageView.as_view()
-        factory = APIRequestFactory()
-        for bad in ['..', '../secret', 'foo/bar', 'foo\\bar']:
-            req = factory.get('/')
-            resp = view(req, short_code=bad)
-            self.assertEqual(resp.status_code, 404, msg=f'should reject {bad}')
+    def test_response_is_cacheable(self):
+        # The QR encodes /qr/redirect/<short_code>/ which is keyed only on
+        # short_code, so the PNG never changes — safe to cache long-term.
+        resp = self.client.get(f'/qr/image/{self.qr.short_code}.png')
+        self.assertIn('immutable', resp['Cache-Control'])
+
+    def test_image_survives_disk_wipe(self):
+        # Regression test for the "QR codes vanish after restart" bug:
+        # PNG generation must depend only on the DB row, not on any file
+        # we previously wrote out.
+        import tempfile
+        from django.conf import settings
+
+        with tempfile.TemporaryDirectory() as empty_root:
+            # Simulate Railway nuking the container disk by pointing
+            # MEDIA_ROOT at a fresh empty dir. Old, unrelated files are
+            # also irrelevant — the on-demand renderer reads neither.
+            original = settings.MEDIA_ROOT
+            settings.MEDIA_ROOT = empty_root
+            try:
+                resp = self.client.get(f'/qr/image/{self.qr.short_code}.png')
+                self.assertEqual(resp.status_code, status.HTTP_200_OK)
+                self.assertEqual(resp['Content-Type'], 'image/png')
+            finally:
+                settings.MEDIA_ROOT = original
